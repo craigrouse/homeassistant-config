@@ -136,8 +136,14 @@ actions:
         data:
           message: Renault 5 ready-by reset to 05:30 after the 11:00 extension.
           title: Renault Charge Target Reset
-    - action: input_boolean.turn_off
-      target:
-        entity_id:
-        - input_boolean.home_for_morning
+    - if:
+      - condition: trigger
+        id: reset_extension_midday
+      then:
+      - action: input_boolean.turn_off
+        target:
+          entity_id:
+          - input_boolean.home_for_morning
+      note: 'Owner ruling 2026-08-23: home_for_morning is armed in the evening for the NEXT morning, so only the midday reset
+        may clear it - the 22:20 reset previously wiped an evening arm before it could ever fire'
 mode: single
