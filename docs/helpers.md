@@ -46,3 +46,8 @@ Both iterate `joined_events` on `event.octopus_energy_a_dbae4963_octoplus_saving
 
 ## Other pre-existing energy helpers
 `input_datetime.time_to_start_exporting` (evening dump start, computed nightly at 20:40), `input_datetime.octopus_off_peak_start`, `input_boolean.holiday_mode`, `input_boolean.home_for_morning`, `input_datetime.tesla_shadow_ready_by`, `input_number.tesla_desired_soc`, COP tracking helpers (heating/DHW power in/out integrations + statistics).
+
+## EV charging slots (2026-08-24)
+| Entity | Definition |
+|---|---|
+| `sensor.ev_charging_slot_1` … `_8` | Template sensors over the Octopus integration's `planned_dispatches` attribute, merged across BOTH cars' intelligent-dispatching binary sensors (only one is ever active — single Wall Connector) and sorted by start. State reads e.g. `Mon 05:00–05:30 · 1.6 kWh · Tesla` (`—` when unused), so each slot has clean recorder history and updates in real time as Octopus replans. Shown on home-v2 → Cars → "Octopus Charging Slots". Replaces the notification-scraping automation `Octopus: Store Charging Times from Notification` (now disabled) and its `input_text.intelligent_octopus_slot_1..10` fields. |
