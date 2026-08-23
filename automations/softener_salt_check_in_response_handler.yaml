@@ -80,16 +80,26 @@ actions:
         data:
           value: '{{ (0.7 * (states(''input_number.salt_litres_per_percent'') | float(230)) + 0.3 * (water_used / burned))
             | round(1) }}'
-    - action: input_number.set_value
-      target:
-        entity_id: input_number.salt_level_estimate
-      data:
-        value: '{{ new_level }}'
-    - action: input_number.set_value
-      target:
-        entity_id: input_number.salt_water_total_at_estimate
-      data:
-        value: '{{ w_now }}'
+    - if:
+      - condition: template
+        value_template: '{{ new_level != prev_level }}'
+      then:
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.salt_level_estimate
+        data:
+          value: '{{ new_level }}'
+    - if:
+      - condition: template
+        value_template: '{{ new_level != prev_level }}'
+        note: A same-as-before answer confirms the level WITHOUT resetting the water baseline, so the measurement window keeps
+          accumulating until a visible drop gives one high-quality burn sample
+      then:
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.salt_water_total_at_estimate
+        data:
+          value: '{{ w_now }}'
     - action: input_datetime.set_datetime
       target:
         entity_id: input_datetime.salt_last_check_in
