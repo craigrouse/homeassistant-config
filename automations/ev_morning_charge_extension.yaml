@@ -1,0 +1,143 @@
+id: tesla_morning_charge_extension
+alias: 'EV: Morning Charge Extension'
+description: 'Works for WHICHEVER car is on the Wall Connector (generalised 2026-08-23 from Tesla-only). If armed via home_for_morning
+  and the plugged car is below its target at the shadow ready-by time, that car''s Octopus ready-by is pushed to 11:00 to
+  farm extra 7p morning slots. Car detection: Wall Connector occupied + binary_sensor.meilin_charge_cable ON = Tesla; occupied
+  + cable OFF = Renault 5. (The old sensor.wall_connector_vehicle VIN sensor no longer exists - do not reintroduce it.) Tesla
+  compares against input_number.tesla_desired_soc with the 6h daily-charging guard (BLE sensor, Tesla-only); the Renault compares
+  against its own Octopus charge target. Both reset to 05:30 at midday/22:20 and the arm toggle clears.'
+triggers:
+- at: input_datetime.tesla_shadow_ready_by
+  id: check_extension_time
+  trigger: time
+- entity_id: input_boolean.home_for_morning
+  from: 'off'
+  id: check_extension_home
+  to: 'on'
+  trigger: state
+- at: '12:00:00'
+  id: reset_extension_midday
+  trigger: time
+- at: '22:20:00'
+  id: reset_extension_night
+  trigger: time
+conditions: []
+actions:
+- choose:
+  - conditions:
+    - condition: or
+      conditions:
+      - condition: trigger
+        id: check_extension_time
+      - condition: trigger
+        id: check_extension_home
+    - condition: state
+      entity_id: input_boolean.home_for_morning
+      state: 'on'
+    - condition: state
+      entity_id: binary_sensor.tesla_wall_connector_vehicle_connected
+      state: 'on'
+    - condition: state
+      entity_id: binary_sensor.meilin_charge_cable
+      state: 'on'
+    - condition: template
+      value_template: '{{ now() >= today_at(states(''input_datetime.tesla_shadow_ready_by'')) and now().hour < 11 }}'
+    - condition: template
+      value_template: '{{ states(''sensor.meilin_battery_level'') | float(0) < states(''input_number.tesla_desired_soc'')
+        | float(80) }}'
+    - condition: template
+      value_template: '{{ states(''sensor.tesla_charging_time_daily'') | float(0) < 6.0 }}'
+    - condition: template
+      value_template: '{{ states(''select.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_target_time'') !=
+        ''11:00'' }}'
+    sequence:
+    - action: select.select_option
+      data:
+        option: '11:00'
+      target:
+        entity_id:
+        - select.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_target_time
+    - action: persistent_notification.create
+      data:
+        message: 'Tesla ready-by extended to 11:00 to request extra slots. SoC: {{ states(''sensor.meilin_battery_level'')
+          }}%, daily charging: {{ states(''sensor.tesla_charging_time_daily'') }}h.'
+        title: Tesla Morning Charge Extension
+  - conditions:
+    - condition: or
+      conditions:
+      - condition: trigger
+        id: check_extension_time
+      - condition: trigger
+        id: check_extension_home
+    - condition: state
+      entity_id: input_boolean.home_for_morning
+      state: 'on'
+    - condition: state
+      entity_id: binary_sensor.tesla_wall_connector_vehicle_connected
+      state: 'on'
+    - condition: state
+      entity_id: binary_sensor.meilin_charge_cable
+      state: 'off'
+    - condition: template
+      value_template: '{{ now() >= today_at(states(''input_datetime.tesla_shadow_ready_by'')) and now().hour < 11 }}'
+    - condition: template
+      value_template: '{{ states(''sensor.battery'') | float(0) < states(''number.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_charge_target'')
+        | float(100) }}'
+    - condition: template
+      value_template: '{{ states(''select.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_target_time'') !=
+        ''11:00'' }}'
+    sequence:
+    - action: select.select_option
+      data:
+        option: '11:00'
+      target:
+        entity_id:
+        - select.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_target_time
+    - action: persistent_notification.create
+      data:
+        message: 'Renault 5 ready-by extended to 11:00 to request extra slots. SoC: {{ states(''sensor.battery'') }}%, target:
+          {{ states(''number.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_charge_target'') }}%.'
+        title: Renault Morning Charge Extension
+  - conditions:
+    - condition: or
+      conditions:
+      - condition: trigger
+        id: reset_extension_midday
+      - condition: trigger
+        id: reset_extension_night
+    sequence:
+    - if:
+      - condition: state
+        entity_id: select.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_target_time
+        state: '11:00'
+      then:
+      - action: select.select_option
+        data:
+          option: 05:30
+        target:
+          entity_id:
+          - select.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_target_time
+      - action: persistent_notification.create
+        data:
+          message: Tesla ready-by reset to 05:30 after the 11:00 extension.
+          title: Tesla Charge Target Reset
+    - if:
+      - condition: state
+        entity_id: select.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_target_time
+        state: '11:00'
+      then:
+      - action: select.select_option
+        data:
+          option: 05:30
+        target:
+          entity_id:
+          - select.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_target_time
+      - action: persistent_notification.create
+        data:
+          message: Renault 5 ready-by reset to 05:30 after the 11:00 extension.
+          title: Renault Charge Target Reset
+    - action: input_boolean.turn_off
+      target:
+        entity_id:
+        - input_boolean.home_for_morning
+mode: single
