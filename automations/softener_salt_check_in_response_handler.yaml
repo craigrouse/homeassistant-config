@@ -1,0 +1,106 @@
+id: '1787506173084'
+alias: 'Softener: Salt Check-In Response Handler'
+description: 'Handles the salt check-in notification buttons. ''Lower...'' sends a second push with 50/25/Empty. A level answer:
+  (1) if the previous estimate is higher and enough water has flowed since (a real burn sample), blends the observed litres-per-percent
+  into the learned burn rate (EMA 70/30); refills (answer higher than previous) skip learning; (2) stores the new estimate,
+  the current Aquaro lifetime total, and the check-in timestamp; (3) confirms with the learned rate and days-to-empty.'
+triggers:
+- trigger: event
+  event_type: mobile_app_notification_action
+  event_data:
+    action: SALT_LOWER
+  id: lower
+- trigger: event
+  event_type: mobile_app_notification_action
+  event_data:
+    action: SALT_100
+  id: level
+- trigger: event
+  event_type: mobile_app_notification_action
+  event_data:
+    action: SALT_75
+  id: level
+- trigger: event
+  event_type: mobile_app_notification_action
+  event_data:
+    action: SALT_50
+  id: level
+- trigger: event
+  event_type: mobile_app_notification_action
+  event_data:
+    action: SALT_25
+  id: level
+- trigger: event
+  event_type: mobile_app_notification_action
+  event_data:
+    action: SALT_EMPTY
+  id: level
+conditions: []
+actions:
+- choose:
+  - conditions:
+    - condition: trigger
+      id: lower
+    sequence:
+    - action: notify.mobile_app_pixel_10_pro_xl
+      data:
+        title: 🧂 Salt check
+        message: How low is it?
+        data:
+          tag: salt_checkin
+          actions:
+          - action: SALT_50
+            title: 50%
+          - action: SALT_25
+            title: 25%
+          - action: SALT_EMPTY
+            title: Empty (0%)
+  - conditions:
+    - condition: trigger
+      id: level
+    sequence:
+    - variables:
+        new_level: '{{ {''SALT_100'': 100, ''SALT_75'': 75, ''SALT_50'': 50, ''SALT_25'': 25, ''SALT_EMPTY'': 0}[trigger.event.data.action]
+          }}'
+        prev_level: '{{ states(''input_number.salt_level_estimate'') | float(0) }}'
+        w_now: '{{ states(''sensor.filtered_water_usage_aquaro'') | float(0) }}'
+        w_prev: '{{ states(''input_number.salt_water_total_at_estimate'') | float(0) }}'
+        burned: '{{ (states(''input_number.salt_level_estimate'') | float(0)) - ({''SALT_100'': 100, ''SALT_75'': 75, ''SALT_50'':
+          50, ''SALT_25'': 25, ''SALT_EMPTY'': 0}[trigger.event.data.action]) }}'
+        water_used: '{{ (states(''sensor.filtered_water_usage_aquaro'') | float(0)) - (states(''input_number.salt_water_total_at_estimate'')
+          | float(0)) }}'
+    - if:
+      - condition: template
+        value_template: '{{ burned >= 10 and w_prev > 0 and water_used > 500 }}'
+        note: 'A meaningful burn sample: level dropped 10%+ over 500+ litres; refills and tiny samples skip learning'
+      then:
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.salt_litres_per_percent
+        data:
+          value: '{{ (0.7 * (states(''input_number.salt_litres_per_percent'') | float(230)) + 0.3 * (water_used / burned))
+            | round(1) }}'
+    - action: input_number.set_value
+      target:
+        entity_id: input_number.salt_level_estimate
+      data:
+        value: '{{ new_level }}'
+    - action: input_number.set_value
+      target:
+        entity_id: input_number.salt_water_total_at_estimate
+      data:
+        value: '{{ w_now }}'
+    - action: input_datetime.set_datetime
+      target:
+        entity_id: input_datetime.salt_last_check_in
+      data:
+        datetime: '{{ now() }}'
+    - action: notify.mobile_app_pixel_10_pro_xl
+      data:
+        title: '🧂 Salt logged: {{ new_level }}%'
+        message: 'Burn rate: {{ states(''input_number.salt_litres_per_percent'') }} L per 1% → roughly {{ (new_level * (states(''input_number.salt_litres_per_percent'')
+          | float(230)) / 550) | round(0) | int }} days to empty at 550 L/day.'
+        data:
+          tag: salt_checkin
+mode: queued
+max: 5

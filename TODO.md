@@ -29,7 +29,8 @@ Tracked on the [kanban board](https://github.com/users/craigrouse/projects/3/vie
 The heat pump deliberately runs at a constant low temp all winter — no scheduling wanted. The winter lever is battery strategy: the pump draws up to 30 kWh on the coldest days, and morning slot-farming is what keeps the batteries topped.
 - [ ] Forecast-driven cold-day handling: skip/shrink the 01:30 night dump and refill deeper when tomorrow is forecast cold
 - [ ] Decide whether the old disabled seasonal on/off automations (heat pump at off-peak, Altherma morning) get deleted or kept as manual tools
-- [ ] Brine tank salt-level sensor — hardware ORDERED 2026-08-23 (XIAO ESP32-C3 + Grove Base + Grove VL53L0X + 2000 mAh PH2.0 LiPo, ~£20, solder-free). INSIDE-lid mount (lid top is used as storage): also needs IP65 ABS box, conformal spray, silicone, velcro. On arrival: flash + test first (record empty/full distances for % calibration), battery polarity red-to-+ check, coat boards (mask sensor window/sockets/USB-C), seal sensor aperture in box, velcro under lid over the salt side
+- [x] Salt tracking BUILT 2026-08-23 as software check-in instead of hardware (owner call: too time-poor for the sensor build): weekly actionable push (Sun 10:00 home / arrival catch-up) -> estimate 100/75/50/25/0; handler learns litres-per-percent from the Aquaro meter (EMA, seeded 230 L/%); sensor.salt_level_live interpolates between check-ins; low alerts at 15%/5% with Refilled button
+- [ ] Cancel the AliExpress sensor parts order if not wanted for tinkering (XIAO C3 + Grove bits, ~£20)
 
 ## Watching / someday
 - [ ] Renault 5 V2G — Mobilize UK launch (structural upgrade: ~tripled cycleable capacity); revisit charger investment when available

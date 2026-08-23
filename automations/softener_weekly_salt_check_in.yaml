@@ -1,0 +1,53 @@
+id: '1787506156889'
+alias: 'Softener: Weekly Salt Check-In'
+description: 'Human-in-the-loop salt tracking (replaces the rotted physical counter): Sunday 10:00 when Craig is home - or
+  next arrival home once 7+ days overdue - sends an actionable push asking for the current salt level. The buttons feed the
+  Response Handler, which learns the litres-per-percent burn rate from the Aquaro water meter and keeps sensor.salt_level_live
+  honest.'
+triggers:
+- trigger: time
+  at: '10:00:00'
+  id: sunday
+- trigger: state
+  entity_id: person.craig_rouse
+  to: home
+  id: arrived
+conditions:
+- condition: or
+  conditions:
+  - condition: and
+    conditions:
+    - condition: trigger
+      id: sunday
+    - condition: time
+      weekday:
+      - sun
+    - condition: state
+      entity_id: person.craig_rouse
+      state: home
+  - condition: and
+    conditions:
+    - condition: trigger
+      id: arrived
+    - condition: time
+      after: 08:00:00
+      before: '21:00:00'
+    - condition: template
+      value_template: '{{ state_attr(''input_datetime.salt_last_check_in'', ''timestamp'') is none or (now().timestamp() -
+        state_attr(''input_datetime.salt_last_check_in'', ''timestamp'')) > 7 * 86400 }}'
+      note: 'Catch-up path: only when the weekly check-in is 7+ days overdue (missed Sunday away from home)'
+actions:
+- action: notify.mobile_app_pixel_10_pro_xl
+  data:
+    title: 🧂 Salt check
+    message: How full is the softener? (Model currently says {{ states('sensor.salt_level_live') }}%)
+    data:
+      tag: salt_checkin
+      actions:
+      - action: SALT_100
+        title: 100%
+      - action: SALT_75
+        title: 75%
+      - action: SALT_LOWER
+        title: Lower…
+mode: single

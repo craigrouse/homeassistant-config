@@ -1,0 +1,49 @@
+id: '1787506180640'
+alias: 'Softener: Low Salt Alert'
+description: 'Fires from the live water-interpolated salt level (not just the weekly check-ins): warns at 15% with a days-remaining
+  estimate, and again at 5%. The ''Refilled to 100%'' button feeds the same Response Handler as the weekly check-in. Suppressed
+  until the system has its first real estimate.'
+triggers:
+- trigger: numeric_state
+  entity_id: sensor.salt_level_live
+  below: 15
+  id: low
+- trigger: numeric_state
+  entity_id: sensor.salt_level_live
+  below: 5
+  id: critical
+conditions:
+- condition: numeric_state
+  entity_id: input_number.salt_level_estimate
+  above: 0
+  note: No alerts before the first check-in, or after Empty has been logged deliberately
+actions:
+- choose:
+  - conditions:
+    - condition: trigger
+      id: critical
+    sequence:
+    - action: notify.mobile_app_pixel_10_pro_xl
+      data:
+        title: 🧂 Salt nearly gone
+        message: Estimated {{ states('sensor.salt_level_live') }}% left - refill now.
+        data:
+          tag: salt_alert
+          actions:
+          - action: SALT_100
+            title: Refilled to 100%
+  - conditions:
+    - condition: trigger
+      id: low
+    sequence:
+    - action: notify.mobile_app_pixel_10_pro_xl
+      data:
+        title: 🧂 Salt low
+        message: Estimated {{ states('sensor.salt_level_live') }}% left, about {{ states('sensor.salt_days_remaining') }}
+          days at normal usage. Time to buy salt.
+        data:
+          tag: salt_alert
+          actions:
+          - action: SALT_100
+            title: Refilled to 100%
+mode: single
