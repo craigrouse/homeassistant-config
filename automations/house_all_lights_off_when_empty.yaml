@@ -1,0 +1,37 @@
+id: '1787496129508'
+alias: 'House: All Lights Off when Empty'
+description: When the house empties (Craig or Jade leaves and the other is already away) and guest mode is off, turn off every
+  light. Guest mode is the override for visitors/kids at home with a sitter.
+triggers:
+- trigger: state
+  entity_id: person.craig_rouse
+  from: home
+  id: craig_left
+- trigger: state
+  entity_id: person.jade
+  from: home
+  id: jade_left
+conditions:
+- condition: not
+  conditions:
+  - condition: state
+    entity_id: person.craig_rouse
+    state: home
+  note: 'not-home via negation: a person in a named zone (e.g. work) is not in state ''not_home'''
+- condition: not
+  conditions:
+  - condition: state
+    entity_id: person.jade
+    state: home
+- condition: state
+  entity_id: input_boolean.guest_mode
+  state: 'off'
+actions:
+- action: light.turn_off
+  target:
+    floor_id:
+    - downstairs
+    - upstairs
+    - loft
+    - outside
+mode: single
