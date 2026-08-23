@@ -21,6 +21,7 @@ Tracked on the [kanban board](https://github.com/users/craigrouse/projects/3/vie
 - [ ] Remove the lounge_ceiling YAML group block from config + restart, then rename light.lounge_ceiling_2
 
 ## Next
+- [ ] Teslemetry PINNED at v6.0.3 (v6.0.15 needs a newer core than 2026.8.3 and broke every TOU push on 2026-08-23) - unpin after the next core update or a fixed release; the broken version is skipped in HA updates
 - [ ] First paid Saving Session of the season: verify the new calendar-triggered controller + paid-session gate end-to-end
 - [ ] Margin tracker: sanity-check `sensor.grid_margin_today` against the Octopus bill after a full week
 - [ ] Update rate constants (6.9p/30.4p/12p) in the margin sensor whenever the tariff changes
