@@ -14,7 +14,7 @@ triggers:
   to: 'off'
   trigger: state
 - entity_id:
-  - timer.manual_import_countdown
+  - timer.import_countdown_timer
   id: timer_finished
   to: idle
   trigger: state
@@ -28,9 +28,9 @@ actions:
     sequence:
     - action: timer.start
       data:
-        duration: '{{ (states(''input_number.manual_import_duration_hours'') | float(1.0) * 3600) | int }}'
+        duration: '{{ (states(''input_number.import_duration_hours'') | float(1.0) * 3600) | int }}'
       target:
-        entity_id: timer.manual_import_countdown
+        entity_id: timer.import_countdown_timer
     - action: switch.turn_on
       target:
         entity_id:
@@ -40,7 +40,7 @@ actions:
         device_id: dd527e4bc7ab1a14f356f9973480e7f7
         tou_settings: |-
           {% set now_dt = now() %}
-          {% set dur_hours = states('input_number.manual_import_duration_hours') | float(1.0) %}
+          {% set dur_hours = states('input_number.import_duration_hours') | float(1.0) %}
           {% set start_dt = now_dt | as_local %}
           {% set end_dt = (now_dt + timedelta(hours=dur_hours)) | as_local %}
           {% set start_hour = start_dt.hour | int %}
@@ -169,7 +169,7 @@ actions:
         entity_id: input_boolean.start_manual_force_import
     - action: timer.cancel
       target:
-        entity_id: timer.manual_import_countdown
+        entity_id: timer.import_countdown_timer
     - action: automation.trigger
       target:
         entity_id: automation.powerwall_daily_scheduler

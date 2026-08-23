@@ -29,8 +29,8 @@ Both iterate `joined_events` on `event.octopus_energy_a_dbae4963_octoplus_saving
 |---|---|---|
 | `input_boolean.manual_export_active` | toggle | The dashboard force-export button (drives Manual Export Controller) |
 | `input_boolean.start_manual_force_import` | toggle | The dashboard force-import button (drives Manual Import Controller) |
-| `input_number.manual_export_duration_hours` / `manual_import_duration_hours` | slider 0.25–6h, 0.25 steps | Duration for the manual controllers (import one created 2026-08-23 — it never existed; import always defaulted to 1h) |
-| `timer.manual_export_countdown` / `manual_import_countdown` | timer | Auto-stop for manual runs |
+| `input_number.manual_export_duration_hours` / `input_number.import_duration_hours` | slider 0.25–6h, 0.25 steps | Duration for the manual controllers. NOTE the asymmetric naming — the import one is `import_duration_hours` (no `manual_` prefix); until 2026-08-23 the controller read a non-existent `manual_import_duration_hours` and the timer entity was also wrong, so manual force import was entirely broken |
+| `timer.manual_export_countdown` / `timer.import_countdown_timer` | timer | Auto-stop for manual runs (again note the asymmetric import naming) |
 | `input_datetime.manual_export_window_from` / `_until` (+ import pair) | time | "Export/import between" window times |
 | `input_boolean.manual_export_window_armed` / `manual_import_window_armed` | toggle | One-shot arm for the window scheduler |
 

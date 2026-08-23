@@ -4,8 +4,9 @@ Tracked on the [kanban board](https://github.com/users/craigrouse/projects/3/vie
 
 ## Now
 - [ ] Verify the 2026-08-23 free-session credit lands in the Octopus account (~15.1 kWh, cap guard fired at 15.0)
-- [ ] Add the export/import window controls + margin sensors to the solar dashboard
 - [ ] Watch the first automated free session end-to-end (pre-dump → fill → cap guard → restore)
+- [ ] Test the new window controls (lovelace/solar + Whole House → Energy) and the repaired manual force import
+- [ ] Add the margin sensors (`sensor.grid_margin_today` + daily meters) to a dashboard
 
 ## Next
 - [ ] First paid Saving Session of the season: verify the new calendar-triggered controller + paid-session gate end-to-end
