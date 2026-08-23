@@ -1,0 +1,57 @@
+id: '1787499395945'
+alias: 'Presence: Jade Location Stale Watchdog'
+description: 'Nothing OS throttles the HA companion app''s background location when the app hasn''t been used recently: the
+  phone keeps reporting on schedule but replays Android''s cached last-known fix (signature: gps_accuracy pinned at exactly
+  100, frozen coordinates - seen 2026-08-23 when Jade showed home for 40+ min after leaving). This watchdog force-requests
+  a fresh fix via the app''s command push (message: request_location_update, works because the app is throttled, not force-stopped).
+  Gated on Craig being away because that is when a wrong Jade-presence corrupts decisions (midnight alarm mode, empty-house
+  lights); when everyone is home an idle phone legitimately serves accuracy-100 fixes and nudging it all night would just
+  cost battery. Escalates to Craig''s phone if an hour and a half of nudges produce nothing fresh.'
+triggers:
+- trigger: numeric_state
+  entity_id: device_tracker.nothing
+  attribute: gps_accuracy
+  above: 99
+  for:
+    minutes: 30
+  id: stale
+  note: Fresh fixes run 5-30 m; cache replay is pinned at exactly 100
+- trigger: numeric_state
+  entity_id: device_tracker.nothing
+  attribute: gps_accuracy
+  above: 99
+  for:
+    minutes: 90
+  id: still_stale
+conditions:
+- condition: not
+  conditions:
+  - condition: state
+    entity_id: person.craig_rouse
+    state: home
+  note: Only chase a fresh fix when Craig is away - the scenario where stale Jade-presence matters
+actions:
+- choose:
+  - conditions:
+    - condition: trigger
+      id: stale
+    sequence:
+    - action: notify.mobile_app_nothing
+      data:
+        message: request_location_update
+      note: 'Silent command push: forces the app to take one accurate fix in the background'
+  - conditions:
+    - condition: trigger
+      id: still_stale
+    sequence:
+    - action: notify.mobile_app_nothing
+      data:
+        message: request_location_update
+    - action: notify.send_message
+      data:
+        title: 📍 Jade's location looks stale
+        message: Her phone has served cached fixes for 90+ minutes despite forced-update pushes, so her shown presence ({{
+          states('person.jade') }}) may be wrong. Open the HA app on her phone to wake it.
+      target:
+        entity_id: notify.pixel_10_pro_xl
+mode: single
