@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rouse House — Home Assistant System Guide</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1a1d23; --muted: #5c6470;
+    --line: #e3e6ea; --accent: #0b6e4f;
+    --energy: #b45309; --security: #b91c1c; --lights: #a16207; --climate: #0369a1;
+    --media: #7c3aed; --system: #475569; --presence: #0e7490; --softener: #15803d;
+    --warn-bg: #fef3c7; --warn-line: #f59e0b; --danger-bg: #fee2e2; --danger-line: #dc2626;
+    --code-bg: #eef1f4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151a; --card: #1b1f26; --ink: #e8eaed; --muted: #9aa3ad;
+      --line: #2b313a; --accent: #34d399;
+      --energy: #f59e0b; --security: #f87171; --lights: #facc15; --climate: #38bdf8;
+      --media: #a78bfa; --system: #94a3b8; --presence: #22d3ee; --softener: #4ade80;
+      --warn-bg: #3a2e0c; --warn-line: #d97706; --danger-bg: #3b1212; --danger-line: #ef4444;
+      --code-bg: #242a33;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+         background: var(--bg); color: var(--ink); line-height: 1.55; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 24px 20px 80px; }
+  header.hero { padding: 40px 0 8px; }
+  header.hero h1 { font-size: 1.9rem; margin: 0 0 4px; }
+  header.hero p.sub { color: var(--muted); margin: 0 0 14px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: .85rem; color: var(--muted); }
+  .meta span { background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; }
+  nav.toc { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 20px; margin: 22px 0; }
+  nav.toc strong { display: block; margin-bottom: 8px; }
+  nav.toc a { color: var(--accent); text-decoration: none; margin-right: 14px; white-space: nowrap; line-height: 2; }
+  nav.toc a:hover { text-decoration: underline; }
+  section { margin-top: 40px; }
+  h2 { font-size: 1.35rem; border-bottom: 2px solid var(--line); padding-bottom: 8px; margin-bottom: 16px; }
+  h3 { font-size: 1.05rem; margin: 22px 0 8px; }
+  p, li { color: var(--ink); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; margin: 14px 0; }
+  .badge { display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+           padding: 2px 10px; border-radius: 999px; color: #fff; vertical-align: middle; margin-right: 8px; }
+  .b-energy { background: var(--energy); } .b-security { background: var(--security); }
+  .b-lights { background: var(--lights); } .b-climate { background: var(--climate); }
+  .b-media { background: var(--media); } .b-system { background: var(--system); }
+  .b-presence { background: var(--presence); } .b-softener { background: var(--softener); }
+  .callout { border-left: 4px solid var(--warn-line); background: var(--warn-bg); border-radius: 8px; padding: 12px 16px; margin: 14px 0; }
+  .danger { border-left: 4px solid var(--danger-line); background: var(--danger-bg); border-radius: 8px; padding: 12px 16px; margin: 14px 0; }
+  code { background: var(--code-bg); border-radius: 5px; padding: 1px 6px; font-size: .86em;
+         font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: .92rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: .82rem; text-transform: uppercase; letter-spacing: .03em; }
+  .time { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 600; }
+  footer { margin-top: 60px; color: var(--muted); font-size: .85rem; border-top: 1px solid var(--line); padding-top: 16px; }
+  @media print { body { background: #fff; } .card, nav.toc { border-color: #ccc; break-inside: avoid; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <h1>Rouse House — Home Assistant System Guide</h1>
+  <p class="sub">How this house runs itself: the energy system, security, lighting and everything else — written both as a day-to-day reference and as a break-glass handover.</p>
+  <div class="meta">
+    <span>Last updated: 23 August 2026</span>
+    <span>HA OS on Raspberry Pi 5 · core 2026.8.3</span>
+    <span>HA: <code>http://192.168.1.35:8123</code></span>
+    <span>Config repo: <code>github.com/craigrouse/homeassistant-config</code></span>
+  </div>
+</header>
+
+<nav class="toc">
+  <strong>Contents</strong>
+  <a href="#breakglass">🚨 Break glass</a>
+  <a href="#energy">⚡ Energy &amp; Powerwall</a>
+  <a href="#ev">🚗 EV charging</a>
+  <a href="#security">🔐 Security &amp; alarm</a>
+  <a href="#lights">💡 Lighting</a>
+  <a href="#climate">🌡️ Heating &amp; hot water</a>
+  <a href="#presence">🏝️ Presence &amp; modes</a>
+  <a href="#softener">🧂 Water softener</a>
+  <a href="#media">📺 Media &amp; notifications</a>
+  <a href="#maintenance">🔧 Self-maintenance</a>
+  <a href="#rhythm">🕐 A day in the life</a>
+  <a href="#pitfalls">⚠️ Known pitfalls</a>
+  <a href="#map">🗺️ Where everything lives</a>
+</nav>
+
+<!-- ============================================================ -->
+<section id="breakglass">
+<h2>🚨 Break glass — if you're reading this because something's wrong</h2>
+
+<div class="danger">
+<strong>Golden rule:</strong> almost everything in this house fails safe if you simply <em>turn the automations off</em>. Lights, heating and the alarm all work manually. The only subsystem that actively moves money and energy around is the Powerwall scheduler — read the box below before touching it.
+</div>
+
+<div class="card">
+<h3>Stop the energy system safely</h3>
+<ol>
+  <li>Turn <strong>on</strong> the helper <code>input_boolean.power_hour_active</code>. This is the global freeze flag: the Daily Scheduler, watchdogs and slot automations all stand down while it's on.</li>
+  <li>In the <strong>Tesla app → Powerwall → Settings</strong>, set the mode to <em>Self-Powered</em>. The house now just uses solar + battery like a normal install, no tariff games.</li>
+  <li>That's it. The house has mains power regardless; the batteries keep ~27&nbsp;kWh in reserve and the backup gateway handles power cuts automatically.</li>
+</ol>
+<p><strong>To resume:</strong> turn <code>power_hour_active</code> back off and run the automation <em>"Powerwall: Daily Scheduler"</em> manually once (Settings → Automations → ⋮ → Run). It re-establishes the correct tariff and mode for the current time of day.</p>
+</div>
+
+<div class="card">
+<h3>Essential facts</h3>
+<div class="tablewrap"><table>
+<tr><th>Thing</th><th>Detail</th></tr>
+<tr><td>Electricity tariff</td><td>Octopus Intelligent Go — import 6.9p 23:30–05:30 (and during granted EV slots), ~30.4p otherwise; export 12p flat</td></tr>
+<tr><td>Batteries</td><td>2× Tesla Powerwall 3, ~27 kWh usable, DC-coupled 4.74 kWp solar (controlled via the <em>Teslemetry</em> integration)</td></tr>
+<tr><td>Cars</td><td>Tesla Model Y ("Meilin") + Renault 5, sharing one Tesla Wall Connector</td></tr>
+<tr><td>Alarm</td><td>Ring Alarm. The code is <em>not written in this repo</em> — it's inside the HA automation <em>"Security: Arm Alarm at Midnight"</em> (open it in the HA UI), or ask Craig</td></tr>
+<tr><td>Front door</td><td>Nuki smart lock (works manually with a key regardless)</td></tr>
+<tr><td>Heating / hot water</td><td>Daikin Altherma heat pump (<code>water_heater.altherma</code>). Runs at a constant low temperature all winter <strong>by design</strong> — no schedule to restore</td></tr>
+<tr><td>Water meter</td><td>Aquaro clamp meter, feeds usage stats and the salt tracker</td></tr>
+<tr><td>Persons</td><td>Craig (Pixel 10 Pro XL), Jade (Nothing Phone 3a), Dylan &amp; Mya (tablets/phones on the UniFi allowlist)</td></tr>
+<tr><td>Backups</td><td>All automations are exported as YAML in this repo (<code>automations/</code>); HA itself lives on the Pi 5</td></tr>
+</table></div>
+</div>
+
+<div class="card">
+<h3>Quick "if X, do Y"</h3>
+<div class="tablewrap"><table>
+<tr><th>Symptom</th><th>Do this</th></tr>
+<tr><td>Battery importing/exporting at a weird time and you don't know why</td><td>Freeze the energy system (box above). It's designed to be paused indefinitely with zero harm.</td></tr>
+<tr><td>Export "won't start" even though everything looks armed</td><td>Check the automation's <em>trace</em> in the HA UI for a <code>teslemetry</code> error — a failed tariff push fails silently on the Tesla side. See <a href="#pitfalls">Known pitfalls</a>.</td></tr>
+<tr><td>Alarm armed Home when the house is empty (or vice versa)</td><td>Someone's phone presence is stale — see the Jade location watchdog in <a href="#presence">Presence</a>. Arm/disarm manually via the Ring app or keypad meanwhile.</td></tr>
+<tr><td>Lights doing something unwanted during a gathering</td><td>Turn on <code>input_boolean.guest_mode</code> — it exempts the house from empty-house and midnight-alarm behaviour.</td></tr>
+<tr><td>Hot water cold</td><td>Set <code>water_heater.altherma</code> operation mode to <code>heat_pump</code> (or <code>performance</code> for a fast immersion boost). Never use "set temperature" — the device doesn't support it.</td></tr>
+<tr><td>An integration's entities all show "unavailable"</td><td>Most self-heal (Ring, Shelly, fridge, bins have reload automations). Otherwise: Settings → Devices &amp; Services → ⋮ on the integration → Reload.</td></tr>
+</table></div>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="energy">
+<h2><span class="badge b-energy">Energy</span>Powerwall arbitrage — the crown jewels</h2>
+
+<p>The house earns money by importing at 6.9p overnight and exporting at 12p during the day, cycling the Powerwalls hard (PW3s tolerate this well; occasional full drains are deliberate for BMS calibration). Solar charges the batteries losslessly (DC-coupled), so conversion cost only applies to AC import/export.</p>
+
+<div class="card">
+<h3>Architecture: one writer, many delegates</h3>
+<p><strong><code>Powerwall: Daily Scheduler</code> is the single source of truth.</strong> It is the <em>only</em> automation that pushes tariff plans to the Powerwall (via <code>teslemetry.time_of_use</code>). The trick: it feeds Tesla's optimiser <em>fake tariffs</em> — a fake sky-high sell price makes the battery dump to grid; fake cheap windows make it charge. Every other energy automation (slot delegate, watchdogs, session controllers) delegates back to the scheduler with <code>automation.trigger</code> + <code>skip_condition:&nbsp;false</code> rather than pushing tariffs themselves — this "single TOU writer" rule is what keeps the system from fighting itself. If you ever add an energy automation, <em>follow that pattern</em>.</p>
+<p>Global freeze flag: <code>input_boolean.power_hour_active</code> — when on, the scheduler and watchdogs do nothing. Sessions and manual overrides use it to take control cleanly.</p>
+</div>
+
+<div class="card">
+<h3>The daily cycle</h3>
+<div class="tablewrap"><table>
+<tr><th>When</th><th>What happens</th></tr>
+<tr><td class="time">~20:40</td><td>Evening export start time is computed from battery level (14 kW rate, 10% buffer) into <code>input_datetime.time_to_start_exporting</code></td></tr>
+<tr><td class="time">≈21:50–23:30</td><td><strong>Evening dump</strong> — battery exports to grid at 12p</td></tr>
+<tr><td class="time">23:30</td><td>Off-peak starts: battery grid-charges at 6.9p to 100%</td></tr>
+<tr><td class="time">01:30–02:50</td><td><strong>Night dump</strong> — exports again until empty (SoC ≤ 3%) or 02:50, skipped while a car is actively charging</td></tr>
+<tr><td class="time">02:50–05:30</td><td>Refill to 100% before the off-peak window closes</td></tr>
+<tr><td class="time">Daytime</td><td>Self-consumption from solar + battery; grid-charge switch held off; solar-arbitrage mode exports surplus if the battery hits 97%+ in summer</td></tr>
+</table></div>
+</div>
+
+<div class="card">
+<h3>Key automations</h3>
+<div class="tablewrap"><table>
+<tr><th>Automation</th><th>Role</th></tr>
+<tr><td>Powerwall: Daily Scheduler</td><td>The master — all standard state transitions, tariff pushes, EV-slot sync, failsafes</td></tr>
+<tr><td>Tesla: Charge Powerwall during Octopus Intelligent Slots</td><td>When Octopus grants a cheap car slot, the Powerwall grid-charges at 6.9p too (delegates to the scheduler)</td></tr>
+<tr><td>Powerwall: Grid Charge Watchdog</td><td>Kills accidental peak-rate grid charging (requires real grid import + battery charging together)</td></tr>
+<tr><td>Powerwall: Grid Export Watchdog</td><td>Detects a "stuck" export and toggles modes to wake the Tesla gateway</td></tr>
+<tr><td>Powerwall: Saving Session Controller</td><td>Paid Octoplus Saving Sessions only — dumps whatever's in the battery during the session window (never pre-fills at peak, by owner ruling)</td></tr>
+<tr><td>Powerwall: Power Hour Controller / Free Session Pre-Dump / Import Cap Guard</td><td>Free-electricity sessions: dump the battery just before, fill it free during, shed load approaching the 16 kWh fair-use cap (guard trips at 15 kWh)</td></tr>
+<tr><td>Powerwall: Manual Export / Import Controllers + Manual Window Scheduler</td><td>The dashboard force-export/import buttons, duration sliders and "export/import between" windows</td></tr>
+<tr><td>Energy: Grid Import Meter Tariff Switcher + <code>sensor.grid_margin_today</code></td><td>Splits daily import into cheap/peak and computes the day's £ margin (rate constants live in the sensor — update on tariff change)</td></tr>
+</table></div>
+</div>
+
+<div class="callout">
+<strong>Paid vs free sessions:</strong> both arrive on the same Octopus calendars with identical wording. The <em>only</em> discriminator is <code>octopoints_per_kwh</code> on the joined event: <strong>0 = free electricity session</strong> (fill the battery), <strong>&gt;0 = paid saving session</strong> (dump the battery). Two template binary sensors — <code>binary_sensor.octopus_paid_saving_session_active</code> and <code>binary_sensor.octopus_free_session_active</code> — encode this and everything gates on them. Kill switch for the automated free-session dump: <code>input_boolean.free_session_auto_dump</code>.
+</div>
+
+<div class="callout">
+<strong>Never export while a car is charging</strong> — the meter nets instantaneously, so exported energy just cancels the car's cheap import. The free-session pre-dump pauses both cars' smart charging for exactly this reason and the Power Hour controller re-enables it.
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="ev">
+<h2><span class="badge b-energy">Energy</span>EV charging &amp; slot farming</h2>
+
+<div class="card">
+<h3>The shadow charge system</h3>
+<p>Normal nights: the plugged-in car charges to its <strong>80% Octopus target by 05:30</strong>. When more range is wanted for the day, the <em>shadow</em> system tops it up on cheap morning slots instead of paying day rate:</p>
+<ol>
+  <li>Evening: set <code>input_datetime.tesla_shadow_ready_by</code> (a half-hour time, e.g. 10:30 — when you want the car ready), set <code>input_number.tesla_desired_soc</code> (the shadow limit, e.g. 100%), and arm <code>input_boolean.home_for_morning</code>.</li>
+  <li>Morning: <em>"EV: Morning Charge Extension"</em> fires with charge-rate-aware lead time <em>before</em> the shadow time (Tesla ~9.8%/h, Renault ~14.2%/h, +20 min buffer), raises the Octopus charge target to the shadow limit and moves the ready-by to the shadow time. Octopus grants 6.9p slots to close the gap — and each slot lets the Powerwall grid-charge cheaply too.</li>
+  <li>Midday: everything resets — ready-by to 05:30, charge target back to 80% (only if the shadow flow raised it), arm toggle cleared. The arm survives overnight; only midday clears it.</li>
+</ol>
+<p>Car detection on the shared Wall Connector: connector occupied + <code>binary_sensor.meilin_charge_cable</code> <strong>on</strong> = Tesla; occupied + cable <strong>off</strong> = Renault 5.</p>
+</div>
+
+<div class="card">
+<h3>Supporting automations</h3>
+<div class="tablewrap"><table>
+<tr><th>Automation</th><th>Role</th></tr>
+<tr><td>EV: Overnight Charge Backstop</td><td>22:45 — if nothing is plugged in and a car is below target, push a reminder before the off-peak window</td></tr>
+<tr><td>Tesla: Sync Octopus and Tesla Charge Limits</td><td>Bidirectional: change the limit in the car/app or the Octopus target and the other follows</td></tr>
+<tr><td>Tesla: Remind to Plug In when Arriving Home</td><td>First-chance plug-in reminder on arrival</td></tr>
+<tr><td>Octopus: notify slot assignment/start, cache slot data</td><td>Visibility into what Octopus granted</td></tr>
+</table></div>
+<p><strong>Note:</strong> the Octopus backend occasionally reverts a manually-set charge target back to 80% within the hour. That's expected — the 80% norm lives at Octopus, which is exactly why the morning raise is automated rather than done by hand the night before.</p>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="security">
+<h2><span class="badge b-security">Security</span>Alarm, locks &amp; safety</h2>
+
+<div class="card">
+<h3>Presence-driven security</h3>
+<div class="tablewrap"><table>
+<tr><th>Event</th><th>Behaviour</th></tr>
+<tr><td>Jade leaves home</td><td>House locks + alarm arms (with notification)</td></tr>
+<tr><td>Craig leaves home</td><td>House locks; if Jade is also away, alarm arms too</td></tr>
+<tr><td>Either arrives home</td><td>Disarm + unlock for that person</td></tr>
+<tr><td>Midnight</td><td>Alarm arms <strong>Home</strong> if anyone is home, <strong>Away</strong> if the house is empty. Skipped in guest mode and holiday mode</td></tr>
+<tr><td>Bedtime (see Lighting)</td><td>The bedtime sweep also arms Home early when everyone's upstairs</td></tr>
+<tr><td>Both phones on charge at night</td><td>Belt-and-braces arming (per-person variants)</td></tr>
+<tr><td>07:00</td><td>Morning disarm</td></tr>
+</table></div>
+</div>
+
+<div class="card">
+<h3>Safety responses</h3>
+<ul>
+  <li><strong>Smoke/CO (Nest Protect, hallway):</strong> Ring alarm triggers <em>and</em> every light in and outside the house goes to full brightness. The door deliberately does <em>not</em> unlock.</li>
+  <li><strong>Water leak:</strong> flood sensors push an alert.</li>
+  <li><strong>Door opened while armed:</strong> announced through the house.</li>
+  <li><strong>Garage door (detached, Ring contact sensor):</strong> alerts if open at 22:00, open when the house empties, or open 2 hours straight. Notify-only — no motorised opener.</li>
+  <li><strong>Nuki jam alerts</strong>, evening lock-status summary, entry-code auto-reset, and a Ring integration self-reload if it drops offline.</li>
+</ul>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="lights">
+<h2><span class="badge b-lights">Lights</span>Lighting</h2>
+
+<p>The biggest group (~45 automations), but the philosophy is simple: <strong>rooms light themselves on schedules, motion and buttons; several sweeps turn things off; nobody should ever think about it.</strong> Floor-targeted actions (<code>floor_id: upstairs</code> etc.) mean new bulbs are covered automatically once assigned to a room.</p>
+
+<div class="card">
+<h3>On</h3>
+<ul>
+  <li>Evening schedules: lounge, kitchen, bedroom, ensuite, upstairs (kids' rooms) come on around dusk.</li>
+  <li>Morning: kitchen counter lights + radio; lounge.</li>
+  <li>Motion/doors: WC, kids bathroom, study (only when dark — an illuminance threshold gates it), garage on car arrival, garden light on door open, loft light on hatch open.</li>
+  <li>Buttons: every bathroom/bedroom has physical button controls; those automations are named "<em>Room</em>: Button Controls".</li>
+</ul>
+</div>
+
+<div class="card">
+<h3>Off — the sweeps</h3>
+<div class="tablewrap"><table>
+<tr><th>Automation</th><th>Behaviour</th></tr>
+<tr><td>Upstairs: Auto-Off Left-On Lights</td><td>Daytime only: Jade leaving on a weekday → all upstairs off; 20 min of no landing motion (08:00–18:20) → all upstairs off; any single upstairs light on 30+ min in daylight turns itself off</td></tr>
+<tr><td>Bedtime: Downstairs Sweep</td><td>Landing motion after 22:30, kitchen &amp; study quiet 15 min, TV off → downstairs lights off + alarm armed Home. Event-driven bedtime instead of waiting for midnight</td></tr>
+<tr><td>House: All Lights Off when Empty</td><td>Both people away + guest mode off → every light off (all floors)</td></tr>
+<tr><td>Kitchen: Lights Off at Midnight / No Motion</td><td>The midnight backstop for kitchen + dining</td></tr>
+<tr><td>Study: AQI Light Colour Indicator</td><td>Not an on/off automation — while the study lights are on, one lamp recolours by air quality (score &lt;70 red, 70–79 orange, 80+ warm white, working hours only). It never switches the light on or off itself</td></tr>
+</table></div>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="climate">
+<h2><span class="badge b-climate">Climate</span>Heating &amp; hot water</h2>
+
+<div class="card">
+<p><strong>Design decision: the heat pump is not scheduled.</strong> The Daikin Altherma runs at a constant low temperature all winter and just keeps going — do not build or restore a heating schedule. Its relevance to automation is <em>load</em>: on the coldest days it draws up to 30 kWh, which is why the morning slot-farming (and the planned cold-day battery strategy) matter — keeping the batteries topped with 6.9p energy is what pays for the heating.</p>
+<ul>
+  <li><strong>Hot water</strong> (<code>water_heater.altherma</code>): morning heat via <code>heat_pump</code> mode; auto-off above 55°C; <code>performance</code> mode = immersion boost, used automatically during free electricity sessions.</li>
+  <li><strong>⚠️ The Altherma does not support "set temperature"</strong> — only operation-mode changes (<code>off</code> / <code>heat_pump</code> / <code>performance</code>). A <code>set_temperature</code> call errors and can abort an automation sequence. Historic bug; don't reintroduce it.</li>
+  <li>Supporting cast: dehumidifier stall control, heated clothes rack off at off-peak end, kids' fans off overnight, heated blanket timer, extractor fans tied to bathroom lights.</li>
+</ul>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="presence">
+<h2><span class="badge b-presence">Presence</span>Presence, modes &amp; holidays</h2>
+
+<div class="card">
+<h3>The mode switches</h3>
+<div class="tablewrap"><table>
+<tr><th>Helper</th><th>Meaning</th></tr>
+<tr><td><code>input_boolean.holiday_mode</code></td><td>Away for days. Affects climate, lights and the midnight alarm skip — <strong>deliberately does NOT touch the energy system</strong>: arbitrage runs at full tilt while away. Auto-set from the holiday start/end datetimes; auto-clears on arrival home. Enables the presence simulation (below)</td></tr>
+<tr><td><code>input_boolean.guest_mode</code></td><td>Someone's legitimately in the house without Craig/Jade (sitter, guests). Exempts the house from empty-house lights-off, midnight alarm and presence simulation</td></tr>
+<tr><td><code>input_boolean.home_for_morning</code></td><td>Arms the EV shadow charge for tomorrow morning (cleared automatically at midday)</td></tr>
+<tr><td><code>input_boolean.power_hour_active</code></td><td>Energy freeze flag (see Break glass)</td></tr>
+</table></div>
+</div>
+
+<div class="card">
+<h3>Holiday behaviour</h3>
+<ul>
+  <li><strong>Presence simulation:</strong> lounge + kitchen lights come on somewhere in 21:00–21:30 (random jitter nightly) and the whole house goes dark somewhere in 22:45–23:15 — looks lived-in, never identical two nights running. Outside lights stay motion-driven.</li>
+  <li><strong>Energy:</strong> business as usual — the batteries earn all week.</li>
+  <li><strong>Hot water:</strong> handled per-trip (one-shot automations, e.g. off on departure, reheat cheaply before return). Delete each one-shot after the trip.</li>
+</ul>
+</div>
+
+<div class="card">
+<h3>Presence reliability</h3>
+<p><strong>Jade Location Stale Watchdog:</strong> Nothing OS throttles the HA app's background location — the phone keeps reporting but replays a cached fix (signature: GPS accuracy pinned at exactly 100, frozen coordinates), so Jade can show "home" while out. When Craig is away and her tracker serves accuracy-100 fixes for 30+ minutes, the watchdog sends the app's silent <code>request_location_update</code> command push to force a real fix, and escalates to Craig's phone at 90 minutes. Manual fix on the phone: open Google Maps for a fresh fix, or open the HA app.</p>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="softener">
+<h2><span class="badge b-softener">Softener</span>Water softener salt tracking</h2>
+
+<div class="card">
+<p>The Kinetico Kube is purely mechanical, so salt level is tracked with a <strong>human-in-the-loop model</strong> calibrated by the Aquaro water meter:</p>
+<ul>
+  <li><strong>Sunday 10:00</strong> (when home; else next arrival once 7+ days overdue): a push asks for the level — buttons <em>100% / 75% / Lower…</em> (then <em>50% / 25% / Empty</em>).</li>
+  <li>Each answer teaches the model how many <strong>litres of water burn 1% of salt</strong> (learned rate in <code>input_number.salt_litres_per_percent</code>). Answer honestly and coarsely: <em>if it looks the same as last week, answer the same number</em> — repeats are free and keep the measurement window accumulating for one high-quality sample when a visible drop finally happens. Refill answers (higher than before) reset the baseline without corrupting the learning.</li>
+  <li><code>sensor.salt_level_live</code> interpolates downward between check-ins from actual water flow; <code>sensor.salt_days_remaining</code> converts at 550 L/day.</li>
+  <li>Alerts at 15% ("buy salt") and 5% ("refill now") — both carry a <em>Refilled to 100%</em> button, and any low answer leaves a sticky refill button in the notification tray.</li>
+</ul>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="media">
+<h2><span class="badge b-media">Media</span>Media, TV &amp; household notifications</h2>
+
+<div class="card">
+<ul>
+  <li><strong>Lounge TV:</strong> idle auto-off (plus the Sky box), Sonos volume lift when the TV comes on, morning TV restriction for the kids (toggle-driven), Nintendo Switch disable toggle.</li>
+  <li><strong>Music:</strong> kitchen radio with the morning lights, morning playlist reset, Sonos night-sound mode, Echo Show screen off at night.</li>
+  <li><strong>Household pushes:</strong> bin night (consolidated), low watch battery, Chase low balance, doorbell announcements, "Jade is 10 minutes away", find-Jade's-phone, drive-in-progress alerts, Tesla range status.</li>
+  <li><strong>Vacuum:</strong> Deebot kitchen/lounge cleans (also exposed to Alexa).</li>
+</ul>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="maintenance">
+<h2><span class="badge b-system">System</span>Self-maintenance — how the house protects its own passivity</h2>
+
+<div class="card">
+<div class="tablewrap"><table>
+<tr><th>Automation</th><th>Role</th></tr>
+<tr><td>Maintenance: Weekly Low-Battery Digest</td><td>Sunday 19:00 — one push listing every battery sensor ≤25% (phones/watches/cars/Powerwall excluded). Dead motion-sensor batteries are the #1 silent killer of the lighting automations</td></tr>
+<tr><td>Maintenance: Critical Sensor Offline Alert</td><td>1 hour of <code>unavailable</code> on any load-bearing entity (motion sensors, AQI, Powerwall, alarm, Altherma, garage door, Nest Protect) → named alert</td></tr>
+<tr><td>Self-heal reloads</td><td>Ring, Shelly (ensuite + kids bathroom), fridge (×2) and bins integrations reload themselves when they wedge</td></tr>
+<tr><td>System: Run Evening Automations on HA Boot</td><td>A restart during the evening re-establishes the evening lighting state</td></tr>
+<tr><td>Counters</td><td>Coffee, salt (legacy), Ring triggers, Tesla events — statistics, not control</td></tr>
+</table></div>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="rhythm">
+<h2>🕐 A day in the life</h2>
+<div class="card">
+<div class="tablewrap"><table>
+<tr><th>Time</th><th>What the house does</th></tr>
+<tr><td class="time">05:30</td><td>Off-peak ends: batteries full, car at its target</td></tr>
+<tr><td class="time">07:00</td><td>Alarm disarms; morning lights + kitchen radio follow</td></tr>
+<tr><td class="time">morning</td><td>Shadow charge fires if armed (raises car limit, farms cheap slots)</td></tr>
+<tr><td class="time">10:00 Sun</td><td>Salt check-in push</td></tr>
+<tr><td class="time">12:00</td><td>EV shadow flow resets (ready-by 05:30, target 80%, arm cleared)</td></tr>
+<tr><td class="time">daytime</td><td>Solar self-consumption; watchdogs guard against accidental peak import; sessions handled automatically as they arise</td></tr>
+<tr><td class="time">dusk</td><td>Evening lighting schedules</td></tr>
+<tr><td class="time">19:00 Sun</td><td>Weekly low-battery digest</td></tr>
+<tr><td class="time">~21:50</td><td>Evening battery dump to grid (start computed from SoC)</td></tr>
+<tr><td class="time">22:00</td><td>Garage-door-open check</td></tr>
+<tr><td class="time">22:45</td><td>EV plug-in backstop reminder if the connector's empty</td></tr>
+<tr><td class="time">after 22:30</td><td>Bedtime sweep when everyone's upstairs: downstairs off, alarm Home</td></tr>
+<tr><td class="time">23:30</td><td>Off-peak: batteries refill, car charges, house imports at 6.9p</td></tr>
+<tr><td class="time">00:00</td><td>Midnight backstops: kitchen off, alarm armed (Home/Away by presence)</td></tr>
+<tr><td class="time">01:30–05:30</td><td>Night dump + refill cycle</td></tr>
+</table></div>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="pitfalls">
+<h2>⚠️ Known pitfalls (learned the hard way)</h2>
+<div class="card">
+<ul>
+  <li><strong>Teslemetry is version-pinned.</strong> The HACS custom Teslemetry v6.0.15 requires a newer HA core than 2026.8.3 and silently breaks <em>every</em> tariff push (<code>DeviceRegistry … include_child_devices</code> error in traces). Pinned at v6.0.3, broken version skipped in HA updates. Unpin only after a core upgrade or a fixed release. Symptom if it recurs: exports/dumps "arm" but the Tesla-side tariff never changes.</li>
+  <li><strong>A failed tariff push fails silently.</strong> The Powerwall just keeps its old plan. Always check the automation trace, not the dashboard, when export behaviour looks wrong.</li>
+  <li><strong><code>automation.trigger</code> defaults to bypassing conditions.</strong> Every delegate call in this system passes <code>skip_condition: false</code> deliberately. Omitting it caused a whole class of session-clobbering bugs once — keep the pattern.</li>
+  <li><strong>Altherma:</strong> operation-mode only, never <code>set_temperature</code> (see Climate).</li>
+  <li><strong>Nothing Phone location staleness</strong> (see Presence) — accuracy pinned at exactly 100 = cached fix.</li>
+  <li><strong>Octopus reverts manual charge-target changes</strong> within about an hour — automate the change or make it in the Octopus app.</li>
+  <li><strong>UniFi tracker allowlist:</strong> the UniFi integration is restricted to family devices. Adding a device to presence tracking means adding it to the allowlist in the integration options, or you'll re-flood HA with hundreds of MAC-randomised guests.</li>
+  <li><strong>The energy system runs during holidays by design.</strong> <code>holiday_mode</code> does not pause it — don't "fix" that.</li>
+  <li><strong>Free-session import cap:</strong> guard trips at 15 kWh against the 16 kWh fair-use limit (~1 kWh meter-lag margin). Don't raise it casually.</li>
+</ul>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="map">
+<h2>🗺️ Where everything lives</h2>
+<div class="card">
+<div class="tablewrap"><table>
+<tr><th>Thing</th><th>Location</th></tr>
+<tr><td>Home Assistant</td><td><code>http://192.168.1.35:8123</code> (HA OS on Raspberry Pi 5; remote via Nabu Casa)</td></tr>
+<tr><td>This repo</td><td><code>github.com/craigrouse/homeassistant-config</code> — automation YAML exports (<code>automations/</code>), architecture notes (<code>README.md</code>), helper reference (<code>docs/helpers.md</code>), to-do (<code>TODO.md</code>)</td></tr>
+<tr><td>Task board</td><td><code>github.com/users/craigrouse/projects/3</code> — the source of truth for open work; TODO.md mirrors it</td></tr>
+<tr><td>Dashboards</td><td><em>Default</em> (incl. the Solar view with manual export/import controls), <em>home-v2</em> (the newer daily-driver: home / media / heating / energy / cars), <em>Whole Home</em> (legacy)</td></tr>
+<tr><td>Automations in HA</td><td>Settings → Automations — grouped by category (Energy, Security, Lights, Climate, Media &amp; Notifications, Appliances &amp; System, Home/Away Control) and labelled by function; every one has a description explaining its intent and history</td></tr>
+<tr><td>Rooms &amp; floors</td><td>Downstairs (kitchen, dining, lounge, study, hallway, utility, WC, driveway) · Upstairs (Ava, Dylan, Mya, master, ensuite, kids bathroom, landing, airing cupboard) · Loft · Outside (garage, garden)</td></tr>
+<tr><td>Key add-ons</td><td>Matter server, Ring-MQTT, Music Assistant, Mosquitto, MCP server, TeslaMate, Grafana, Cloudflared</td></tr>
+</table></div>
+</div>
+
+<div class="callout">
+<strong>For a future maintainer:</strong> every automation's <em>description field in HA</em> is the primary documentation — they record not just what each automation does but <em>why</em>, including dates and the incidents that shaped them. Read those before changing anything, and keep this repo in sync after changes (the YAML in <code>automations/</code> is exported from HA, not hand-written).
+</div>
+</section>
+
+<footer>
+Rouse House Home Assistant system guide · maintained alongside <code>github.com/craigrouse/homeassistant-config</code> · No secrets in this document: the alarm code and API keys live only inside Home Assistant itself.
+</footer>
+
+</div>
+</body>
+</html>
