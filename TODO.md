@@ -25,11 +25,11 @@ Tracked on the [kanban board](https://github.com/users/craigrouse/projects/3/vie
 - [ ] Margin tracker: sanity-check `sensor.grid_margin_today` against the Octopus bill after a full week
 - [ ] Update rate constants (6.9p/30.4p/12p) in the margin sensor whenever the tariff changes
 
-## September — Heating Scheduler (the big one)
-- [ ] Design "Heating Scheduler" for the Altherma mirroring the Daily Scheduler pattern (single writer, window template, same freeze-flag guards)
-- [ ] Preheat house + DHW in the 23:30–05:30 window and dispatch slots; never run the heat pump at day rate
-- [ ] Use the existing COP tracking helpers to decide heat-pump vs immersion and preheat depth
-- [ ] Retire/replace the old disabled seasonal on/off automations (heat pump at off-peak, Altherma morning, off-above-55)
+## September — Cold-day battery strategy (re-scoped 2026-08-23)
+The heat pump deliberately runs at a constant low temp all winter — no scheduling wanted. The winter lever is battery strategy: the pump draws up to 30 kWh on the coldest days, and morning slot-farming is what keeps the batteries topped.
+- [ ] Forecast-driven cold-day handling: skip/shrink the 01:30 night dump and refill deeper when tomorrow is forecast cold
+- [ ] Decide whether the old disabled seasonal on/off automations (heat pump at off-peak, Altherma morning) get deleted or kept as manual tools
+- [ ] Brine tank salt-level sensor (battery-powered) — pick hardware and integrate; threshold notification replaces the salt counter guesswork
 
 ## Watching / someday
 - [ ] Renault 5 V2G — Mobilize UK launch (structural upgrade: ~tripled cycleable capacity); revisit charger investment when available
