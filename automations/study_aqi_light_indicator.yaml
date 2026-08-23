@@ -1,0 +1,96 @@
+id: '1762206888768'
+alias: 'Study: AQI Light Colour Indicator'
+description: 'Colour layer only - recolours light.study_l as an air-quality indicator while the study lights are on (score
+  below 70 = red, 70-79 = orange, 80+ = warm white), weekday working hours only. Rebuilt 2026-08-23: it may NEVER turn the
+  light on from dark or off on its own - on/off is owned exclusively by ''Study: Light On/Off Toggle''. The old version powered
+  study_l on/off itself on every motion event and AQI tick, which fought the motion automation and made the light flash whenever
+  the AQI score wobbled across a band boundary.'
+triggers:
+- trigger: numeric_state
+  entity_id: sensor.first_air_quality_monitor_indoor_air_quality_2
+  below: 70
+  id: aqi_bad
+  note: 'AQI score: higher = better air'
+- trigger: numeric_state
+  entity_id: sensor.first_air_quality_monitor_indoor_air_quality_2
+  above: 69
+  below: 80
+  id: aqi_moderate
+- trigger: numeric_state
+  entity_id: sensor.first_air_quality_monitor_indoor_air_quality_2
+  above: 79
+  id: aqi_good
+- trigger: state
+  entity_id:
+  - light.study_m
+  - light.study_r
+  to: 'on'
+  id: lights_on
+  note: Re-apply the current band the moment the room lights come on
+- trigger: time
+  at: 09:00:00
+  id: hours_start
+- trigger: time
+  at: '18:00:00'
+  id: hours_end
+conditions:
+- condition: or
+  conditions:
+  - condition: state
+    entity_id: light.study_m
+    state: 'on'
+  - condition: state
+    entity_id: light.study_r
+    state: 'on'
+  note: 'Colour layer gate: only act while the room lighting (owned by the motion automation) is on'
+actions:
+- choose:
+  - conditions:
+    - condition: time
+      after: 09:00:00
+      before: '18:00:00'
+      weekday:
+      - mon
+      - tue
+      - wed
+      - thu
+      - fri
+    - condition: numeric_state
+      entity_id: sensor.first_air_quality_monitor_indoor_air_quality_2
+      below: 70
+    sequence:
+    - action: light.turn_on
+      target:
+        entity_id: light.study_l
+      data:
+        brightness_pct: 75
+        color_name: red
+  - conditions:
+    - condition: time
+      after: 09:00:00
+      before: '18:00:00'
+      weekday:
+      - mon
+      - tue
+      - wed
+      - thu
+      - fri
+    - condition: numeric_state
+      entity_id: sensor.first_air_quality_monitor_indoor_air_quality_2
+      below: 80
+    sequence:
+    - action: light.turn_on
+      target:
+        entity_id: light.study_l
+      data:
+        brightness_pct: 75
+        color_name: orange
+  default:
+  - action: light.turn_on
+    target:
+      entity_id: light.study_l
+    data:
+      brightness_pct: 40
+      color_temp_kelvin: 3034
+    note: 'Good air or outside working hours: match the motion automation''s warm-white setting'
+mode: restart
