@@ -1,0 +1,82 @@
+id: holiday_hot_water_aug_2026
+alias: 'Holiday: Hot Water (25-29 Aug) - one-shot'
+description: 'One-shot holiday hot water plan: OFF at Mon 25 Aug 12:00; nightly re-off at 21:00 Tue-Thu in case a free-electricity
+  session''s Power Hour boost turned it back on (the boost itself is free energy - only the after-state needs correcting);
+  back ON in heat_pump mode Fri 29 Aug 03:00 so the tank heats in the 6.9p off-peak window and maintains cheaply (from battery/solar)
+  until the 16:00 return. Disables itself after the Friday leg - DELETE ME after the holiday.'
+triggers:
+- at: '12:00:00'
+  id: depart
+  trigger: time
+- at: '21:00:00'
+  id: nightly_re_off
+  trigger: time
+- at: 03:00:00
+  id: return_heat
+  trigger: time
+conditions: []
+actions:
+- choose:
+  - conditions:
+    - condition: trigger
+      id: depart
+    - condition: template
+      value_template: '{{ now().date() | string == ''2026-08-25'' }}'
+    sequence:
+    - action: water_heater.set_operation_mode
+      data:
+        operation_mode: 'off'
+      target:
+        entity_id: water_heater.altherma
+    - action: notify.send_message
+      data:
+        message: Hot water OFF for the holiday. Arbitrage continues as normal. Safe travels!
+        title: '🏖️ Holiday: Hot Water Off'
+      target:
+        entity_id: notify.pixel_10_pro_xl
+  - conditions:
+    - condition: trigger
+      id: nightly_re_off
+    - condition: template
+      value_template: '{{ now().date() | string in [''2026-08-25'', ''2026-08-26'', ''2026-08-27'', ''2026-08-28''] }}'
+    - condition: not
+      conditions:
+      - condition: state
+        entity_id: water_heater.altherma
+        state: 'off'
+    sequence:
+    - action: water_heater.set_operation_mode
+      data:
+        operation_mode: 'off'
+      target:
+        entity_id: water_heater.altherma
+    - action: notify.send_message
+      data:
+        message: Hot water was back on (probably a free-session boost) - turned it off again for the holiday.
+        title: '🏖️ Holiday: Hot Water Re-Off'
+      target:
+        entity_id: notify.pixel_10_pro_xl
+  - conditions:
+    - condition: trigger
+      id: return_heat
+    - condition: template
+      value_template: '{{ now().date() | string == ''2026-08-29'' }}'
+    sequence:
+    - action: water_heater.set_operation_mode
+      data:
+        operation_mode: heat_pump
+      target:
+        entity_id: water_heater.altherma
+    - action: notify.send_message
+      data:
+        message: Hot water heating started in the 6.9p window - tank will be hot and maintained for your 16:00 return. This
+          one-shot automation has now disabled itself; delete it when convenient.
+        title: '🏡 Holiday: Hot Water Heating for Return'
+      target:
+        entity_id: notify.pixel_10_pro_xl
+    - action: automation.turn_off
+      data:
+        stop_actions: false
+      target:
+        entity_id: automation.holiday_hot_water_25_29_aug_one_shot
+mode: single

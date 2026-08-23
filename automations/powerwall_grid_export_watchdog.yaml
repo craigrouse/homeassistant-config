@@ -10,9 +10,6 @@ triggers:
     | float(0)) > 15 }}'
 conditions:
 - condition: state
-  entity_id: input_boolean.holiday_mode
-  state: 'off'
-- condition: state
   entity_id: binary_sensor.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_dispatching
   state: 'off'
 - condition: state

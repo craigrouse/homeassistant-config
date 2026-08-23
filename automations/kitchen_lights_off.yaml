@@ -1,0 +1,30 @@
+id: '1638832706258'
+alias: 'Kitchen: Lights Off at Midnight / No Motion'
+description: 'Single owner of kitchen switch-off (2026-08-23: absorbed two redundant duplicates - lights_kitchen_lights_off
+  and lights_kitchen_lights_off_evening - and now also turns off the dining area, which the old midnight scene covered).'
+triggers:
+- at: 00:00:00
+  trigger: time
+- type: no_motion
+  device_id: 487f4ca2ec7f37a16707716ea1e6bbf9
+  entity_id: binary_sensor.kitchen_motion_sensor
+  domain: binary_sensor
+  for:
+    hours: 0
+    minutes: 10
+    seconds: 0
+  trigger: device
+conditions: []
+actions:
+- type: turn_off
+  device_id: 86d4e2b824e4a73bbf8c7ffc665d1d89
+  entity_id: light.counter_lights
+  domain: light
+- data: {}
+  target:
+    entity_id: light.whole_kitchen
+  action: light.turn_off
+- target:
+    entity_id: light.whole_dining_area
+  action: light.turn_off
+mode: single

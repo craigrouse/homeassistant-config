@@ -31,9 +31,6 @@ triggers:
   trigger: time
 conditions:
 - condition: state
-  entity_id: input_boolean.holiday_mode
-  state: 'off'
-- condition: state
   entity_id: input_boolean.manual_export_active
   state: 'off'
 actions:

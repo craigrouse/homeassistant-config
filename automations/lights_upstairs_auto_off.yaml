@@ -1,0 +1,77 @@
+id: '1643318699018'
+alias: 'Upstairs: Auto-Off Left-On Lights'
+description: 'Rebuilt 2026-08-23 (old version turned off 11 hardcoded device_ids, several dead since the Tuya-to-Nanoleaf
+  migration). Three signals, daytime only: (1) Jade leaving on a weekday (usually with the kids) turns off ALL upstairs lights;
+  (2) 20 minutes of no landing motion during the day turns off all upstairs lights; (3) any individual upstairs light on for
+  30+ minutes in daylight is turned off by itself. Loft light excluded (has its own hatch automation).'
+triggers:
+- trigger: state
+  entity_id: person.jade
+  from: home
+  to: not_home
+  id: jade_left
+- trigger: state
+  entity_id: binary_sensor.landing_motion_sensor
+  to: 'off'
+  for:
+    minutes: 20
+  id: no_landing_motion
+- trigger: state
+  entity_id:
+  - light.avaceiling
+  - light.ava_s_reading_light
+  - light.dylanbed
+  - light.dylanceiling
+  - light.myabed
+  - light.myaceiling
+  - light.kids_bathroom_1
+  - light.kids_bathroom_2
+  - light.kids_bathroom_3
+  - light.ensuite
+  - light.ensuiteshower
+  - light.bedroom_light
+  - light.craigbed
+  - light.jadebed
+  to: 'on'
+  for:
+    minutes: 30
+  id: light_left_on
+conditions:
+- condition: sun
+  after: sunrise
+  before: sunset
+actions:
+- choose:
+  - conditions:
+    - condition: trigger
+      id: jade_left
+    - condition: time
+      weekday:
+      - mon
+      - tue
+      - wed
+      - thu
+      - fri
+    sequence:
+    - action: light.turn_off
+      target:
+        floor_id: upstairs
+  - conditions:
+    - condition: trigger
+      id: no_landing_motion
+    - condition: time
+      after: 08:00:00
+      before: '18:20:00'
+    sequence:
+    - action: light.turn_off
+      target:
+        floor_id: upstairs
+  - conditions:
+    - condition: trigger
+      id: light_left_on
+    sequence:
+    - action: light.turn_off
+      target:
+        entity_id: '{{ trigger.entity_id }}'
+mode: parallel
+max: 10

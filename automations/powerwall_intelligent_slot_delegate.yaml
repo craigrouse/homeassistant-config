@@ -67,10 +67,7 @@ triggers:
   id: car_unplugged
   to: 'off'
   trigger: state
-conditions:
-- condition: state
-  entity_id: input_boolean.holiday_mode
-  state: 'off'
+conditions: []
 actions:
 - choose:
   - conditions:

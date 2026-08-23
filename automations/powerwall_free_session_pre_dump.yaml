@@ -21,9 +21,6 @@ conditions:
   entity_id: input_boolean.free_session_auto_dump
   state: 'on'
 - condition: state
-  entity_id: input_boolean.holiday_mode
-  state: 'off'
-- condition: state
   entity_id: input_boolean.power_hour_active
   state: 'off'
 actions:

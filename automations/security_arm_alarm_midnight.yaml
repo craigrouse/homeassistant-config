@@ -1,0 +1,38 @@
+id: '1627855411500'
+alias: 'Security: Arm Alarm at Midnight'
+description: 'At midnight: arm HOME if anyone is home, arm AWAY if the house is empty (fixed 2026-08-23 - previously always
+  armed home, downgrading away-mode while on holiday). Skipped in guest mode and holiday mode (when on holiday the alarm stays
+  however it was left, i.e. away).'
+triggers:
+- at: 00:00:00
+  trigger: time
+conditions:
+- condition: state
+  entity_id: input_boolean.holiday_mode
+  state: 'off'
+- condition: state
+  entity_id: input_boolean.guest_mode
+  state: 'off'
+actions:
+- if:
+  - condition: or
+    conditions:
+    - condition: state
+      entity_id: person.craig_rouse
+      state: home
+    - condition: state
+      entity_id: person.jade
+      state: home
+  then:
+  - action: alarm_control_panel.alarm_arm_home
+    target:
+      entity_id: alarm_control_panel.rouse_house_didcot_alarm
+    data:
+      code: REDACTED
+  else:
+  - action: alarm_control_panel.alarm_arm_away
+    target:
+      entity_id: alarm_control_panel.rouse_house_didcot_alarm
+    data:
+      code: REDACTED
+mode: single

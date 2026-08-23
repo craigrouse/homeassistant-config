@@ -99,9 +99,6 @@ triggers:
   trigger: state
 conditions:
 - condition: state
-  entity_id: input_boolean.holiday_mode
-  state: 'off'
-- condition: state
   entity_id: binary_sensor.octopus_paid_saving_session_active
   state: 'off'
 - condition: state

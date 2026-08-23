@@ -16,9 +16,6 @@ triggers:
   trigger: numeric_state
 conditions:
 - condition: state
-  entity_id: input_boolean.holiday_mode
-  state: 'off'
-- condition: state
   entity_id: input_boolean.power_hour_active
   state: 'off'
 - condition: state

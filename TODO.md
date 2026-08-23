@@ -7,6 +7,18 @@ Tracked on the [kanban board](https://github.com/users/craigrouse/projects/3/vie
 - [ ] Watch the first automated free session end-to-end (pre-dump → fill → cap guard → restore)
 - [ ] Test the new window controls (lovelace/solar + Whole House → Energy) and the repaired manual force import
 - [ ] Add the margin sensors (`sensor.grid_margin_today` + daily meters) to a dashboard
+- [ ] Test "Upstairs: Auto-Off Left-On Lights" (Jade-leaves weekday rule + 30-min daylight rule)
+- [ ] Delete "Holiday: Hot Water (25–29 Aug)" one-shot automation after returning
+
+## Review queue (2026-08-23 automation audit)
+- [ ] Delete broken automation "Kitchen: Turn Off Lights Warning on Off-Peak Start" (targets deleted dining spots, already disabled)
+- [ ] Review "System: Update Sony TV State (2s Interval)" — heaviest automation in the house, likely obsolete
+- [ ] Fix or delete "Notify Jade if Craig in Meeting on Arrival" — references dead MuteSync sensors
+- [ ] Disable "Lounge: Christmas Tree Toggle" until December
+- [ ] Review the Octopus timestamp-cache cluster for redundancy (automation_108, set_power_hour_start, saving_sessions_set_timestamps, store_3_minutes_before_slot_ends, set_octopus_end_time_from_sensor)
+- [ ] Tesla Sunday 100% charge automation is OFF — deliberate? (LFP calibration reminder)
+- [ ] Check wall switches: Ava's and Mya's ceiling lights show unavailable in HA
+- [ ] Remove the lounge_ceiling YAML group block from config + restart, then rename light.lounge_ceiling_2
 
 ## Next
 - [ ] First paid Saving Session of the season: verify the new calendar-triggered controller + paid-session gate end-to-end
@@ -27,3 +39,4 @@ Tracked on the [kanban board](https://github.com/users/craigrouse/projects/3/vie
 ## Decided / not doing
 - Agile Outgoing export — not interested; prefer the fixed 12p margin at any time of day
 - Pre-filling the battery at peak rate before paid Saving Sessions — rarely worth it; dump whatever is in the battery
+- Holiday mode gating energy automations — removed 2026-08-23; arbitrage runs on holiday by design
