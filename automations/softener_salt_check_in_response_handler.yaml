@@ -102,5 +102,21 @@ actions:
           | float(230)) / 550) | round(0) | int }} days to empty at 550 L/day.'
         data:
           tag: salt_checkin
+    - if:
+      - condition: template
+        value_template: '{{ new_level <= 25 }}'
+        note: 'Low answer: leave a sticky refill button in the tray, since the low-salt alert (which carries one) is suppressed
+          at these levels'
+      then:
+      - action: notify.mobile_app_pixel_10_pro_xl
+        data:
+          title: 🧂 Salt is low - tap when refilled
+          message: Logged {{ new_level }}%. When you top up the Kube, tap the button and the tracker resets to 100%.
+          data:
+            tag: salt_refill_reminder
+            sticky: 'true'
+            actions:
+            - action: SALT_100
+              title: Refilled to 100%
 mode: queued
 max: 5
