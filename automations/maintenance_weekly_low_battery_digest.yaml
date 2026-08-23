@@ -1,0 +1,31 @@
+id: '1787502840038'
+alias: 'Maintenance: Weekly Low-Battery Digest'
+description: 'Sunday 19:00 sweep of every battery-class sensor at or below 25%, sent as one digest push. Protects the passive
+  house: dead motion-sensor batteries silently break the lighting automations days before anyone works out why. Excludes things
+  that are supposed to run their battery down (phones, tablets, watches, cars, Powerwall).'
+triggers:
+- trigger: time
+  at: '19:00:00'
+conditions:
+- condition: time
+  weekday:
+  - sun
+- condition: template
+  value_template: '{{ low_batteries | count > 0 }}'
+variables:
+  low_batteries: '{% set exclude = [''phone'', ''pixel'', ''tablet'', ''p50'', ''m40'', ''iphone'', ''watch'', ''meilin'',
+    ''powerwall'', ''pw3'', ''garmin'', ''nothing''] %}{% set ns = namespace(items=[]) %}{% for s in states.sensor %}{% if
+    s.attributes.device_class | default('''') == ''battery'' and s.state | is_number and s.state | float <= 25 and s.entity_id
+    != ''sensor.battery'' %}{% set skip = namespace(v=false) %}{% for e in exclude %}{% if e in s.entity_id %}{% set skip.v
+    = true %}{% endif %}{% endfor %}{% if not skip.v %}{% set ns.items = ns.items + [s.name ~ '': '' ~ s.state ~ ''%''] %}{%
+    endif %}{% endif %}{% endfor %}{{ ns.items }}'
+actions:
+- action: notify.send_message
+  data:
+    title: '🔋 Weekly battery check: {{ low_batteries | count }} low'
+    message: |-
+      {{ low_batteries | join('
+      ') }}
+  target:
+    entity_id: notify.pixel_10_pro_xl
+mode: single

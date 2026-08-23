@@ -1,0 +1,45 @@
+id: '1787502873111'
+alias: 'Holiday: Presence Simulation'
+description: 'While holiday mode is on (and guest mode off), makes the house look lived-in: lounge and kitchen lights come
+  on around 21:00-21:30 with random jitter so the timing differs every night, and everything inside goes off around 22:45-23:15.
+  The off leg also cleans up after the normal dusk schedules, which otherwise leave the house going dark at exactly midnight
+  every night. Outside lights are left to their motion automations.'
+triggers:
+- trigger: time
+  at: '21:00:00'
+  id: evening_on
+- trigger: time
+  at: '22:45:00'
+  id: night_off
+conditions:
+- condition: state
+  entity_id: input_boolean.holiday_mode
+  state: 'on'
+- condition: state
+  entity_id: input_boolean.guest_mode
+  state: 'off'
+actions:
+- choose:
+  - conditions:
+    - condition: trigger
+      id: evening_on
+    sequence:
+    - delay: '{{ range(0, 1800) | random }}'
+      note: 0-30 min jitter so the pattern differs nightly
+    - action: light.turn_on
+      target:
+        area_id:
+        - lounge
+        - kitchen
+  - conditions:
+    - condition: trigger
+      id: night_off
+    sequence:
+    - delay: '{{ range(0, 1800) | random }}'
+    - action: light.turn_off
+      target:
+        floor_id:
+        - downstairs
+        - upstairs
+        - loft
+mode: single

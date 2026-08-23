@@ -1,0 +1,35 @@
+id: '1787502854117'
+alias: 'EV: Overnight Charge Backstop'
+description: '22:45 second chance for the arrival plug-in reminder: if nothing is on the Wall Connector, Craig is home, and
+  either car is below its Octopus charge target, push a reminder before the 23:30 off-peak window opens. An unplugged car
+  means no cheap dispatch slots and nothing for the morning slot-farming to work with.'
+triggers:
+- trigger: time
+  at: '22:45:00'
+conditions:
+- condition: state
+  entity_id: person.craig_rouse
+  state: home
+- condition: state
+  entity_id: binary_sensor.tesla_wall_connector_vehicle_connected
+  state: 'off'
+- condition: or
+  conditions:
+  - condition: numeric_state
+    entity_id: sensor.meilin_battery_level
+    below: number.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_charge_target
+  - condition: numeric_state
+    entity_id: sensor.battery
+    below: number.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_charge_target
+  note: At least one car below its Octopus target
+actions:
+- action: notify.send_message
+  data:
+    title: 🔌 Nothing plugged in tonight
+    message: 'Off-peak starts at 23:30 and the Wall Connector is empty. Tesla: {{ states(''sensor.meilin_battery_level'')
+      }}% (target {{ states(''number.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_charge_target'') }}%).
+      Renault: {{ states(''sensor.battery'') }}% (target {{ states(''number.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_charge_target'')
+      }}%).'
+  target:
+    entity_id: notify.pixel_10_pro_xl
+mode: single

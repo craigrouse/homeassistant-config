@@ -1,0 +1,32 @@
+id: '1787502847044'
+alias: 'Maintenance: Critical Sensor Offline Alert'
+description: Notifies when a load-bearing entity has been unavailable for an hour - these are the sensors whose silent death
+  makes other automations blind (motion-driven lighting, AQI indicator, Powerwall scheduling, alarm, hot water, garage door
+  monitoring, smoke detection). Complements the integration-specific self-heal reloads (Ring, Shelly, fridge, bins) by covering
+  everything that has no reload automation.
+triggers:
+- trigger: state
+  entity_id:
+  - binary_sensor.study_motion_sensor_2nd_gen
+  - binary_sensor.landing_motion_sensor
+  - binary_sensor.kitchen_motion_sensor
+  - sensor.first_air_quality_monitor_indoor_air_quality_2
+  - sensor.rouse_house_pw3_percentage_charged
+  - sensor.powerwall_192_168_1_182_site_import
+  - alarm_control_panel.rouse_house_didcot_alarm
+  - water_heater.altherma
+  - binary_sensor.garage_door
+  - binary_sensor.nest_protect_hallway_smoke_status
+  to: unavailable
+  for:
+    hours: 1
+conditions: []
+actions:
+- action: notify.send_message
+  data:
+    title: '⚠️ Sensor offline: {{ trigger.to_state.name }}'
+    message: '{{ trigger.entity_id }} has been unavailable for an hour. Automations that depend on it are blind until it recovers.'
+  target:
+    entity_id: notify.pixel_10_pro_xl
+mode: parallel
+max: 10

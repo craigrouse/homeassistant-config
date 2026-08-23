@@ -1,0 +1,69 @@
+id: '1787502867421'
+alias: 'Security: Garage Door Left Open Alert'
+description: 'Notifies when the (detached) garage door is open at the wrong time: still open at 22:00, open when the house
+  empties, or open continuously for 2 hours at any time. Notify-only - there is no motorised opener to auto-close.'
+triggers:
+- trigger: time
+  at: '22:00:00'
+  id: night_check
+- trigger: state
+  entity_id: person.craig_rouse
+  from: home
+  id: someone_left
+- trigger: state
+  entity_id: person.jade
+  from: home
+  id: someone_left
+- trigger: state
+  entity_id: binary_sensor.garage_door
+  to: 'on'
+  for:
+    hours: 2
+  id: open_long
+conditions:
+- condition: state
+  entity_id: binary_sensor.garage_door
+  state: 'on'
+actions:
+- choose:
+  - conditions:
+    - condition: trigger
+      id: someone_left
+    - condition: not
+      conditions:
+      - condition: state
+        entity_id: person.craig_rouse
+        state: home
+    - condition: not
+      conditions:
+      - condition: state
+        entity_id: person.jade
+        state: home
+    sequence:
+    - action: notify.send_message
+      data:
+        title: 🚪 Garage door open
+        message: The house is now empty and the garage door is open.
+      target:
+        entity_id: notify.pixel_10_pro_xl
+  - conditions:
+    - condition: trigger
+      id: night_check
+    sequence:
+    - action: notify.send_message
+      data:
+        title: 🚪 Garage door open
+        message: It's 22:00 and the garage door is still open.
+      target:
+        entity_id: notify.pixel_10_pro_xl
+  - conditions:
+    - condition: trigger
+      id: open_long
+    sequence:
+    - action: notify.send_message
+      data:
+        title: 🚪 Garage door open
+        message: The garage door has been open for 2 hours.
+      target:
+        entity_id: notify.pixel_10_pro_xl
+mode: single

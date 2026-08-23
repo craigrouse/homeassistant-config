@@ -1,0 +1,52 @@
+id: '1787502879912'
+alias: 'Bedtime: Downstairs Sweep when Everyone''s Upstairs'
+description: 'Event-driven bedtime instead of the fixed-midnight cleanups: landing motion late in the evening, with the kitchen
+  and study quiet for 15 minutes and the lounge TV off, means everyone has come up for the night - so turn off all downstairs
+  lights and arm the alarm in home mode early. Early nights get covered instead of waiting for 00:00; the TV-off condition
+  stops it firing while someone is still up watching. Alarm code redacted in this export.'
+triggers:
+- trigger: state
+  entity_id: binary_sensor.landing_motion_sensor
+  to: 'on'
+conditions:
+- condition: time
+  after: '22:30:00'
+  before: 02:00:00
+- condition: or
+  conditions:
+  - condition: state
+    entity_id: person.craig_rouse
+    state: home
+  - condition: state
+    entity_id: person.jade
+    state: home
+- condition: state
+  entity_id: binary_sensor.kitchen_motion_sensor
+  state: 'off'
+  for:
+    minutes: 15
+- condition: state
+  entity_id: binary_sensor.study_motion_sensor_2nd_gen
+  state: 'off'
+  for:
+    minutes: 15
+- condition: state
+  entity_id: media_player.sony_kd_75x81k
+  state: 'off'
+  note: Someone still watching TV = not bedtime
+actions:
+- action: light.turn_off
+  target:
+    floor_id: downstairs
+- if:
+  - condition: state
+    entity_id: alarm_control_panel.rouse_house_didcot_alarm
+    state: disarmed
+  then:
+  - action: alarm_control_panel.alarm_arm_home
+    target:
+      entity_id: alarm_control_panel.rouse_house_didcot_alarm
+    data:
+      code: REDACTED
+mode: single
+max_exceeded: silent

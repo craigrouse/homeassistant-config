@@ -1,0 +1,33 @@
+id: '1787502859789'
+alias: 'Security: All Lights On when Smoke or CO Detected'
+description: Nest Protect smoke or CO alert turns every light on at full brightness (inside for evacuation, outside for the
+  fire service). Runs alongside the existing automation that triggers the Ring alarm. Deliberately does NOT unlock the door
+  (owner decision 2026-08-23).
+triggers:
+- trigger: state
+  entity_id: binary_sensor.nest_protect_hallway_smoke_status
+  to: 'on'
+  id: smoke
+- trigger: state
+  entity_id: binary_sensor.nest_protect_hallway_co_status
+  to: 'on'
+  id: co
+conditions: []
+actions:
+- action: light.turn_on
+  target:
+    floor_id:
+    - downstairs
+    - upstairs
+    - loft
+    - outside
+  data:
+    brightness_pct: 100
+- action: notify.send_message
+  data:
+    title: 🚨 {{ 'CO' if trigger.id == 'co' else 'Smoke' }} detected
+    message: Nest Protect (hallway) fired. All lights forced on at full brightness; Ring alarm triggered by its own automation.
+  target:
+    entity_id: notify.pixel_10_pro_xl
+  continue_on_error: true
+mode: single
