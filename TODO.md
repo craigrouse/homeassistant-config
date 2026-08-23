@@ -29,7 +29,7 @@ Tracked on the [kanban board](https://github.com/users/craigrouse/projects/3/vie
 The heat pump deliberately runs at a constant low temp all winter — no scheduling wanted. The winter lever is battery strategy: the pump draws up to 30 kWh on the coldest days, and morning slot-farming is what keeps the batteries topped.
 - [ ] Forecast-driven cold-day handling: skip/shrink the 01:30 night dump and refill deeper when tomorrow is forecast cold
 - [ ] Decide whether the old disabled seasonal on/off automations (heat pump at off-peak, Altherma morning) get deleted or kept as manual tools
-- [ ] Brine tank salt-level sensor — hardware ORDERED 2026-08-23 (XIAO ESP32-C3 + Grove Base + Grove VL53L0X + 2000 mAh PH2.0 LiPo, ~£20, solder-free); on arrival: check battery polarity (red to +) before plugging in, then flash the ESPHome deep-sleep config (twice-daily median readings, salt-% template, buy-salt push)
+- [ ] Brine tank salt-level sensor — hardware ORDERED 2026-08-23 (XIAO ESP32-C3 + Grove Base + Grove VL53L0X + 2000 mAh PH2.0 LiPo, ~£20, solder-free). INSIDE-lid mount (lid top is used as storage): also needs IP65 ABS box, conformal spray, silicone, velcro. On arrival: flash + test first (record empty/full distances for % calibration), battery polarity red-to-+ check, coat boards (mask sensor window/sockets/USB-C), seal sensor aperture in box, velcro under lid over the salt side
 
 ## Watching / someday
 - [ ] Renault 5 V2G — Mobilize UK launch (structural upgrade: ~tripled cycleable capacity); revisit charger investment when available
