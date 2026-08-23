@@ -1,0 +1,34 @@
+id: '1702059930273'
+alias: Octopus Saving Session joiner
+description: Automatically join Octopus Saving Session Events and record timestamps
+triggers:
+- event_type: octopus_energy_new_octoplus_saving_session
+  trigger: event
+conditions: []
+actions:
+- action: octopus_energy.join_octoplus_saving_session_event
+  data:
+    event_code: '{{ trigger.event.data["event_code"] }}'
+  target:
+    entity_id: event.octopus_energy_a_dbae4963_octoplus_saving_session_events
+- action: input_datetime.set_datetime
+  target:
+    entity_id: input_datetime.octopus_saving_session_next_start
+  data:
+    datetime: '{{ trigger.event.data["event_start"] }}'
+- action: input_datetime.set_datetime
+  target:
+    entity_id: input_datetime.octopus_saving_session_end
+  data:
+    datetime: '{{ trigger.event.data["event_end"] }}'
+- action: notify.mobile_app_pixel_10_pro_xl
+  data:
+    title: Octopus Saving Sessions Updated
+    message: |
+      Joined new Octopus Energy saving session. It starts at {{ trigger.event.data["event_start"].strftime('%H:%M') }} to {{ trigger.event.data["event_end"].strftime('%H:%M') }} on {{ trigger.event.data["event_start"].day }}/{{ trigger.event.data["event_start"].month }}
+- action: notify.mobile_app_nothing
+  data:
+    title: Octopus Saving Sessions Updated
+    message: |
+      Saving session today! It starts at {{ trigger.event.data["event_start"].strftime('%H:%M') }} to {{ trigger.event.data["event_end"].strftime('%H:%M') }} on {{ trigger.event.data["event_start"].day }}/{{ trigger.event.data["event_start"].month }}
+mode: single

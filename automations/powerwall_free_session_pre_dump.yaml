@@ -1,0 +1,139 @@
+id: powerwall_free_session_pre_dump
+alias: 'Powerwall: Free Session Pre-Dump'
+description: 'Fully automates the free-electricity-hour pattern: when a joined free session (octopoints_per_kwh == 0) approaches,
+  it arms power_hour_active (freezing the scheduler and watchdogs), pauses both cars'' intelligent smart charging so a dispatch
+  cannot net against the export, cancels any manual override, and pushes a 3-period TOU (high-sell now until session start,
+  free during, peak after) so the Powerwall dumps right up to the session then refills at zero cost. The Power Hour controller
+  takes over at session start (re-enables smart charging, reserve 100, hot water boost) and restores everything at session
+  end. Dump start time is computed from live SoC at 13 kW net export plus a 5-minute buffer (minimum 10 minutes lead). Kill
+  switch: input_boolean.free_session_auto_dump.'
+triggers:
+- trigger: template
+  value_template: '{% set ns = namespace(start=none) %}{% for e in state_attr(''event.octopus_energy_a_dbae4963_octoplus_saving_session_events'',''joined_events'')
+    | default([], true) %}{% if (e.octopoints_per_kwh | int(1)) == 0 and as_datetime(e.end) > now() and (as_datetime(e.start)
+    | as_local).date() == now().date() and (ns.start is none or as_datetime(e.start) < ns.start) %}{% set ns.start = as_datetime(e.start)
+    %}{% endif %}{% endfor %}{% if ns.start is none %}false{% else %}{% set soc = states(''sensor.rouse_house_pw3_percentage_charged'')
+    | float(0) %}{% set dump_min = [ (soc / 100 * 27 / 13 * 60) | round(0, ''ceil''), 10 ] | max + 5 %}{{ (ns.start - timedelta(minutes=dump_min))
+    <= now() and now() < ns.start }}{% endif %}'
+  id: dump_window_open
+conditions:
+- condition: state
+  entity_id: input_boolean.free_session_auto_dump
+  state: 'on'
+- condition: state
+  entity_id: input_boolean.holiday_mode
+  state: 'off'
+- condition: state
+  entity_id: input_boolean.power_hour_active
+  state: 'off'
+actions:
+- action: input_boolean.turn_on
+  target:
+    entity_id: input_boolean.power_hour_active
+- action: number.set_value
+  data:
+    value: '{{ states(''sensor.powerwall_192_168_1_182_site_import'') | float(0) }}'
+  target:
+    entity_id: input_number.free_session_import_baseline
+- action: switch.turn_off
+  target:
+    entity_id:
+    - switch.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_smart_charge
+    - switch.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_smart_charge
+- action: input_boolean.turn_off
+  target:
+    entity_id:
+    - input_boolean.manual_export_active
+    - input_boolean.start_manual_force_import
+- action: switch.turn_on
+  target:
+    entity_id: switch.rouse_house_pw3_allow_charging_from_grid
+- action: select.select_option
+  data:
+    option: battery_ok
+  target:
+    entity_id: select.rouse_house_pw3_allow_export
+- action: select.select_option
+  data:
+    option: autonomous
+  target:
+    entity_id: select.rouse_house_pw3_operation_mode
+- action: number.set_value
+  data:
+    value: 0
+  target:
+    entity_id: number.rouse_house_pw3_backup_reserve
+- action: teslemetry.time_of_use
+  data:
+    device_id: dd527e4bc7ab1a14f356f9973480e7f7
+    tou_settings: |-
+      {% set ns = namespace(start=none, end=none) %}
+      {% for e in state_attr('event.octopus_energy_a_dbae4963_octoplus_saving_session_events','joined_events') | default([], true) %}
+      {% if (e.octopoints_per_kwh | int(1)) == 0 and as_datetime(e.end) > now() and (ns.start is none or as_datetime(e.start) < ns.start) %}
+      {% set ns.start = as_datetime(e.start) %}{% set ns.end = as_datetime(e.end) %}
+      {% endif %}
+      {% endfor %}
+      {% set start_dt = (ns.start | as_local) if ns.start is not none else today_at('12:00') %}
+      {% set end_dt = (ns.end | as_local) if ns.end is not none else today_at('13:00') %}
+      {% set nh = now().hour | int %}{% set nm = now().minute | int %}
+      {% set sh = start_dt.hour | int %}{% set sm = start_dt.minute | int %}
+      {% set eh = end_dt.hour | int %}{% set em = end_dt.minute | int %}
+      {% set pre_periods = [{'fromDayOfWeek': 0, 'fromHour': nh, 'fromMinute': nm, 'toDayOfWeek': 6, 'toHour': sh, 'toMinute': sm}] %}
+      {% set free_periods = [{'fromDayOfWeek': 0, 'fromHour': sh, 'fromMinute': sm, 'toDayOfWeek': 6, 'toHour': eh, 'toMinute': em}] %}
+      {% set post_periods = [{'fromDayOfWeek': 0, 'fromHour': eh, 'fromMinute': em, 'toDayOfWeek': 6, 'toHour': 0, 'toMinute': 0}, {'fromDayOfWeek': 0, 'fromHour': 0, 'fromMinute': 0, 'toDayOfWeek': 6, 'toHour': nh, 'toMinute': nm}] %}
+      {{ {
+        'break_even_cost_to_charge': 0,
+        'mode': 'time_of_use',
+        'tariff_content_v2': {
+          'code': 'FREE-HOUR-PRE-DUMP',
+          'currency': 'GBP',
+          'daily_charges': [{'amount': 0, 'name': 'Charge'}],
+          'demand_charges': {'ALL': {'rates': {'ALL': 0}}},
+          'energy_charges': {
+            'ALL': {'rates': {'ALL': 0}},
+            'AllYear': {'rates': {'PRE': 1.50, 'FREE': 0.00, 'POST': 1.50}}
+          },
+          'name': 'Free Session Pre-Dump',
+          'seasons': {
+            'AllYear': {
+              'fromDay': 1, 'fromMonth': 1, 'toDay': 31, 'toMonth': 12,
+              'tou_periods': {
+                'PRE': {'periods': pre_periods},
+                'FREE': {'periods': free_periods},
+                'POST': {'periods': post_periods}
+              }
+            }
+          },
+          'sell_tariff': {
+            'currency': 'GBP',
+            'daily_charges': [{'amount': 0, 'name': 'Charge'}],
+            'demand_charges': {'ALL': {'rates': {'ALL': 0}}},
+            'energy_charges': {
+              'ALL': {'rates': {'ALL': 0}},
+              'AllYear': {'rates': {'PRE': 2.90, 'FREE': 0.00, 'POST': 0.00}}
+            },
+            'name': 'Free Session Pre-Dump',
+            'seasons': {
+              'AllYear': {
+                'fromDay': 1, 'fromMonth': 1, 'toDay': 31, 'toMonth': 12,
+                'tou_periods': {
+                  'PRE': {'periods': pre_periods},
+                  'FREE': {'periods': free_periods},
+                  'POST': {'periods': post_periods}
+                }
+              }
+            },
+            'utility': 'Octopus Energy'
+          },
+          'utility': 'Octopus Energy',
+          'version': 1
+        }
+      } }}
+- action: notify.send_message
+  data:
+    message: Free session pre-dump armed. Battery at {{ states('sensor.rouse_house_pw3_percentage_charged') | round(0) }}%,
+      exporting until the session starts. Smart charging paused on both cars (Power Hour re-enables it at session start).
+    title: '💸 Powerwall: Free Session Pre-Dump Started'
+  target:
+    entity_id: notify.pixel_10_pro_xl
+mode: single

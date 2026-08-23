@@ -1,0 +1,109 @@
+id: '1675548412362'
+alias: 'Tesla: Charge Powerwall during Octopus Intelligent Slots'
+description: 'On smart-slot or charging start: cancels any manual export and delegates Powerwall control to the Daily Scheduler
+  (single TOU writer, no racing pushes). Guarded so Saving Sessions and Power Hour are never overridden by a car slot.'
+triggers:
+- entity_id:
+  - binary_sensor.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_dispatching
+  id: slot_start
+  to: 'on'
+  trigger: state
+- entity_id:
+  - binary_sensor.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_dispatching
+  id: slot_start
+  to: 'on'
+  trigger: state
+- entity_id:
+  - binary_sensor.tesla_wall_connector_contactor_closed
+  for: 00:01:00
+  id: slot_start
+  to: 'on'
+  trigger: state
+- entity_id:
+  - sensor.meilin_charging
+  for: 00:01:00
+  id: slot_start
+  to: charging
+  trigger: state
+- entity_id:
+  - binary_sensor.charging
+  for: 00:01:00
+  id: slot_start
+  to: 'on'
+  trigger: state
+- entity_id:
+  - binary_sensor.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_dispatching
+  id: slot_end
+  to: 'off'
+  trigger: state
+- entity_id:
+  - binary_sensor.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_dispatching
+  id: slot_end
+  to: 'off'
+  trigger: state
+- entity_id:
+  - binary_sensor.tesla_wall_connector_contactor_closed
+  for:
+    minutes: 5
+  id: slot_end
+  to: 'off'
+  trigger: state
+- entity_id:
+  - sensor.meilin_charging
+  for:
+    minutes: 5
+  from: charging
+  id: slot_end
+  trigger: state
+- entity_id:
+  - binary_sensor.charging
+  for:
+    minutes: 5
+  id: slot_end
+  to: 'off'
+  trigger: state
+- entity_id:
+  - binary_sensor.tesla_wall_connector_vehicle_connected
+  id: car_unplugged
+  to: 'off'
+  trigger: state
+conditions:
+- condition: state
+  entity_id: input_boolean.holiday_mode
+  state: 'off'
+actions:
+- choose:
+  - conditions:
+    - condition: trigger
+      id:
+      - slot_start
+    - condition: state
+      entity_id: binary_sensor.octopus_paid_saving_session_active
+      state: 'off'
+    - condition: state
+      entity_id: input_boolean.power_hour_active
+      state: 'off'
+    sequence:
+    - action: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.manual_export_active
+    - action: timer.cancel
+      target:
+        entity_id: timer.manual_export_countdown
+    - action: automation.trigger
+      target:
+        entity_id: automation.powerwall_daily_scheduler
+      data:
+        skip_condition: false
+  - conditions:
+    - condition: trigger
+      id:
+      - slot_end
+      - car_unplugged
+    sequence:
+    - action: automation.trigger
+      target:
+        entity_id: automation.powerwall_daily_scheduler
+      data:
+        skip_condition: false
+mode: single

@@ -1,0 +1,40 @@
+id: powerwall_free_session_import_cap_guard
+alias: 'Powerwall: Free Session Import Cap Guard'
+description: 'Octopus free-electricity sessions have a 16 kWh fair-use cap. This sheds all discretionary load when grid import
+  since session start (site_import minus the baseline stamped at session start) reaches the configurable threshold (input_number.free_session_import_cap,
+  default 15.0 to absorb ~1 min sensor lag at 15 kW): stops Powerwall grid charging, pauses both cars'' smart charging, and
+  ends the hot-water boost. The Power Hour end branch still restores everything (including smart charging) at session end.'
+triggers:
+- trigger: template
+  value_template: '{{ is_state(''input_boolean.power_hour_active'', ''on'') and (states(''sensor.powerwall_192_168_1_182_site_import'')
+    | float(0)) - (states(''input_number.free_session_import_baseline'') | float(0)) >= (states(''input_number.free_session_import_cap'')
+    | float(15)) }}'
+  id: cap_reached
+conditions:
+- condition: state
+  entity_id: input_boolean.power_hour_active
+  state: 'on'
+actions:
+- action: switch.turn_off
+  target:
+    entity_id: switch.rouse_house_pw3_allow_charging_from_grid
+- action: switch.turn_off
+  target:
+    entity_id:
+    - switch.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_smart_charge
+    - switch.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_smart_charge
+- action: water_heater.set_operation_mode
+  data:
+    operation_mode: heat_pump
+  target:
+    entity_id: water_heater.altherma
+  continue_on_error: true
+- action: notify.send_message
+  data:
+    message: Imported {{ ((states('sensor.powerwall_192_168_1_182_site_import') | float(0)) - (states('input_number.free_session_import_baseline')
+      | float(0))) | round(1) }} kWh this session - shedding load to stay under the 16 kWh fair-use cap. Powerwall grid charge
+      stopped, car smart charging paused, hot water boost ended. Everything restores at session end.
+    title: '⚠️ Powerwall: Free Session Cap Guard Fired'
+  target:
+    entity_id: notify.pixel_10_pro_xl
+mode: single

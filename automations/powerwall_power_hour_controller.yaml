@@ -1,0 +1,202 @@
+id: '1634676090662'
+alias: 'Powerwall: Power Hour Controller'
+description: Handles Octopus FREE electricity sessions only - gated by binary_sensor.octopus_free_session_active (octopoints_per_kwh
+  == 0; paid Saving Sessions are handled by the Saving Session controller). Triggered natively by the power-down calendar
+  (start / end-minus-3-min reserve drop / end). At session start it re-enables both cars smart charging, stamps the display
+  input_datetimes for the dashboards, stamps the import-cap baseline, forces grid charge with reserve 100, boosts hot water
+  (immersion via performance mode), and pushes a dynamic free-window TOU. Restores everything at session end.
+triggers:
+- trigger: calendar
+  entity_id: calendar.octopus_energy_a_dbae4963_octoplus_power_down
+  event: start
+  offset: 00:00:15
+  id: power_hour_start
+- trigger: calendar
+  entity_id: calendar.octopus_energy_a_dbae4963_octoplus_power_down
+  event: end
+  offset: -00:03:00
+  id: 3_mins_before_end
+- trigger: calendar
+  entity_id: calendar.octopus_energy_a_dbae4963_octoplus_power_down
+  event: end
+  id: power_hour_end
+- at: input_datetime.20th_oct_12pm
+  id: power_hour_start
+  trigger: time
+- at: input_datetime.3_mins_before_power_hour_end
+  id: 3_mins_before_end
+  trigger: time
+- at: input_datetime.20th_oct_1pm
+  id: power_hour_end
+  trigger: time
+conditions:
+- condition: state
+  entity_id: input_boolean.holiday_mode
+  state: 'off'
+- condition: state
+  entity_id: input_boolean.manual_export_active
+  state: 'off'
+actions:
+- choose:
+  - conditions:
+    - condition: trigger
+      id:
+      - power_hour_start
+    - condition: state
+      entity_id: binary_sensor.octopus_free_session_active
+      state: 'on'
+    sequence:
+    - action: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.power_hour_active
+    - action: input_datetime.set_datetime
+      data:
+        datetime: '{{ states(''input_datetime.octopus_saving_session_next_start'') }}'
+      target:
+        entity_id: input_datetime.20th_oct_12pm
+      continue_on_error: true
+    - action: input_datetime.set_datetime
+      data:
+        datetime: '{{ as_datetime(states(''input_datetime.octopus_saving_session_end'')) - timedelta(minutes=3) }}'
+      target:
+        entity_id: input_datetime.3_mins_before_power_hour_end
+      continue_on_error: true
+    - action: input_datetime.set_datetime
+      data:
+        datetime: '{{ states(''input_datetime.octopus_saving_session_end'') }}'
+      target:
+        entity_id: input_datetime.20th_oct_1pm
+      continue_on_error: true
+    - action: number.set_value
+      data:
+        value: '{{ states(''sensor.powerwall_192_168_1_182_site_import'') | float(0) }}'
+      target:
+        entity_id: input_number.free_session_import_baseline
+    - action: switch.turn_on
+      target:
+        entity_id:
+        - switch.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_smart_charge
+        - switch.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_smart_charge
+    - action: switch.turn_on
+      target:
+        entity_id: switch.rouse_house_pw3_allow_charging_from_grid
+    - action: number.set_value
+      data:
+        value: 100
+      target:
+        entity_id: number.rouse_house_pw3_backup_reserve
+    - action: select.select_option
+      data:
+        option: autonomous
+      target:
+        entity_id: select.rouse_house_pw3_operation_mode
+    - action: select.select_option
+      data:
+        option: pv_only
+      target:
+        entity_id: select.rouse_house_pw3_allow_export
+    - action: teslemetry.time_of_use
+      data:
+        device_id: dd527e4bc7ab1a14f356f9973480e7f7
+        tou_settings: |-
+          {% set start_str = states('input_datetime.octopus_saving_session_next_start') %}
+          {% set end_str = states('input_datetime.octopus_saving_session_end') %}
+          {% set start_dt = as_datetime(start_str) if start_str not in ['unknown','unavailable','none'] else today_at('12:00') %}
+          {% set end_dt = as_datetime(end_str) if end_str not in ['unknown','unavailable','none'] else today_at('13:00') %}
+          {% set sh = start_dt.hour | int %}{% set sm = start_dt.minute | int %}
+          {% set eh = end_dt.hour | int %}{% set em = end_dt.minute | int %}
+          {% if end_dt.day == start_dt.day %}
+            {% set free_periods = [{'fromDayOfWeek': 0, 'fromHour': sh, 'fromMinute': sm, 'toDayOfWeek': 6, 'toHour': eh, 'toMinute': em}] %}
+            {% set peak_periods = [{'fromDayOfWeek': 0, 'fromHour': 0, 'fromMinute': 0, 'toDayOfWeek': 6, 'toHour': sh, 'toMinute': sm}, {'fromDayOfWeek': 0, 'fromHour': eh, 'fromMinute': em, 'toDayOfWeek': 6, 'toHour': 0, 'toMinute': 0}] %}
+          {% else %}
+            {% set free_periods = [{'fromDayOfWeek': 0, 'fromHour': sh, 'fromMinute': sm, 'toDayOfWeek': 6, 'toHour': 0, 'toMinute': 0}, {'fromDayOfWeek': 0, 'fromHour': 0, 'fromMinute': 0, 'toDayOfWeek': 6, 'toHour': eh, 'toMinute': em}] %}
+            {% set peak_periods = [{'fromDayOfWeek': 0, 'fromHour': eh, 'fromMinute': em, 'toDayOfWeek': 6, 'toHour': sh, 'toMinute': sm}] %}
+          {% endif %}
+          {{ {
+            'break_even_cost_to_charge': 0,
+            'mode': 'time_of_use',
+            'tariff_content_v2': {
+              'code': 'FREE-HOUR-DYNAMIC',
+              'currency': 'GBP',
+              'daily_charges': [{'amount': 0, 'name': 'Charge'}],
+              'demand_charges': {'ALL': {'rates': {'ALL': 0}}},
+              'energy_charges': {
+                'ALL': {'rates': {'ALL': 0}},
+                'AllYear': {'rates': {'FREE': 0.00, 'ON_PEAK': 1.50}}
+              },
+              'name': 'Octopus Free Electricity Session',
+              'seasons': {
+                'AllYear': {
+                  'fromDay': 1, 'fromMonth': 1, 'toDay': 31, 'toMonth': 12,
+                  'tou_periods': {
+                    'FREE': {'periods': free_periods},
+                    'ON_PEAK': {'periods': peak_periods}
+                  }
+                }
+              },
+              'sell_tariff': {
+                'currency': 'GBP',
+                'daily_charges': [{'amount': 0, 'name': 'Charge'}],
+                'demand_charges': {'ALL': {'rates': {'ALL': 0}}},
+                'energy_charges': {
+                  'ALL': {'rates': {'ALL': 0}},
+                  'AllYear': {'rates': {'FREE': 0.00, 'ON_PEAK': 0.00}}
+                },
+                'name': 'Octopus Free Electricity Session',
+                'seasons': {
+                  'AllYear': {
+                    'fromDay': 1, 'fromMonth': 1, 'toDay': 31, 'toMonth': 12,
+                    'tou_periods': {
+                      'FREE': {'periods': free_periods},
+                      'ON_PEAK': {'periods': peak_periods}
+                    }
+                  }
+                },
+                'utility': 'Octopus Energy'
+              },
+              'utility': 'Octopus Energy',
+              'version': 1
+            }
+          } }}
+    - action: water_heater.set_operation_mode
+      data:
+        operation_mode: performance
+      target:
+        entity_id: water_heater.altherma
+      continue_on_error: true
+  - conditions:
+    - condition: trigger
+      id:
+      - 3_mins_before_end
+    sequence:
+    - action: number.set_value
+      data:
+        value: 0
+      target:
+        entity_id: number.rouse_house_pw3_backup_reserve
+  - conditions:
+    - condition: trigger
+      id:
+      - power_hour_end
+    sequence:
+    - action: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.power_hour_active
+    - action: switch.turn_off
+      target:
+        entity_id: switch.rouse_house_pw3_allow_charging_from_grid
+    - action: water_heater.set_operation_mode
+      data:
+        operation_mode: heat_pump
+      target:
+        entity_id: water_heater.altherma
+      continue_on_error: true
+    - action: automation.trigger
+      target:
+        entity_id: automation.powerwall_daily_scheduler
+    - action: switch.turn_on
+      target:
+        entity_id:
+        - switch.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_smart_charge
+        - switch.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_smart_charge
+mode: single

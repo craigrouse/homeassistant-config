@@ -1,0 +1,44 @@
+id: powerwall_grid_export_watchdog
+alias: 'Powerwall: Grid Export Watchdog'
+description: Detects when Powerwall should be exporting to grid during dump windows but output is stuck at 0 kW, toggling
+  mode to force Gateway refresh.
+triggers:
+- for: 00:03:00
+  trigger: template
+  value_template: '{{ is_state(''select.rouse_house_pw3_allow_export'', ''battery_ok'') and is_state(''select.rouse_house_pw3_operation_mode'',
+    ''autonomous'') and (states(''sensor.rouse_house_pw3_battery_power'') | float(0)) < 1.0 and (states(''sensor.rouse_house_pw3_percentage_charged'')
+    | float(0)) > 15 }}'
+conditions:
+- condition: state
+  entity_id: input_boolean.holiday_mode
+  state: 'off'
+- condition: state
+  entity_id: binary_sensor.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_dispatching
+  state: 'off'
+- condition: state
+  entity_id: binary_sensor.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_dispatching
+  state: 'off'
+actions:
+- action: system_log.write
+  data:
+    level: warning
+    logger: automation.powerwall_export_watchdog
+    message: 'Powerwall Export Watchdog: Export stuck. Initiating Tesla Gateway refresh sequence.'
+- action: select.select_option
+  data:
+    option: self_consumption
+  target:
+    entity_id: select.rouse_house_pw3_operation_mode
+- delay:
+    seconds: 5
+- action: select.select_option
+  data:
+    option: autonomous
+  target:
+    entity_id: select.rouse_house_pw3_operation_mode
+- action: automation.trigger
+  target:
+    entity_id: automation.powerwall_daily_scheduler
+  data:
+    skip_condition: false
+mode: single

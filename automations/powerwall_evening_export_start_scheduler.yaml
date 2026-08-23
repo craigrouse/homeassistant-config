@@ -1,0 +1,28 @@
+id: '1719003647423'
+alias: 'Powerwall: Set time to start exporting in evening'
+description: Calculates evening start export time dynamically based on total capacity (27 kWh for PW3 pair), current SoC,
+  export rate (14 kW), and a 10% reserve buffer.
+triggers:
+- at: '20:40:00'
+  trigger: time
+conditions: []
+actions:
+- action: input_datetime.set_datetime
+  data:
+    datetime: |-
+      {% set total_capacity = 27.0 %}
+      {% set export_rate = 14.0 %}
+      {% set buffer_pct = 10.0 %}
+      {% set soc = states('sensor.rouse_house_pw3_percentage_charged') | float(0) %}
+      {% set usable_kwh = [((soc - buffer_pct) / 100.0 * total_capacity), 0] | max %}
+      {% set hours_to_export = usable_kwh / export_rate %}
+      {% set target_2330 = today_at('23:30:00') %}
+      {% set calculated_start = target_2330 - timedelta(hours=hours_to_export) %}
+      {% if calculated_start < now() %}
+        {{ (now() + timedelta(minutes=1)) | as_local }}
+      {% else %}
+        {{ calculated_start }}
+      {% endif %}
+  target:
+    entity_id: input_datetime.time_to_start_exporting
+mode: single

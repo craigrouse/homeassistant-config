@@ -1,0 +1,313 @@
+id: '1780438384579'
+alias: 'Powerwall: Daily Scheduler'
+description: Master controller for all standard daily Powerwall state transitions, overnight arbitrage, EV slot sync, and
+  safety protections.
+triggers:
+- at: input_datetime.time_to_start_exporting
+  id: evening_export_start
+  trigger: time
+- at: input_datetime.octopus_off_peak_start
+  id: off_peak_start
+  trigger: time
+- at: 01:30:00
+  id: night_dump_start
+  trigger: time
+- at: 02:50:00
+  id: night_charge_start
+  trigger: time
+- at: 05:30:00
+  id: off_peak_end
+  trigger: time
+- at: 05:31:00
+  id: morning_failsafe_check
+  trigger: time
+- at: '10:59:00'
+  id: solar_optimize_start
+  trigger: time
+- below: 12
+  entity_id: sensor.rouse_house_pw3_percentage_charged
+  id: evening_failsafe_trigger
+  trigger: numeric_state
+- below: 3
+  entity_id: sensor.rouse_house_pw3_percentage_charged
+  id: night_dump_failsafe
+  trigger: numeric_state
+- entity_id: binary_sensor.tesla_wall_connector_contactor_closed
+  for: 00:01:00
+  id: car_charge_detected
+  to: 'on'
+  trigger: state
+- entity_id: sensor.meilin_charging
+  for: 00:01:00
+  id: car_charge_detected
+  to: charging
+  trigger: state
+- entity_id: binary_sensor.charging
+  for: 00:01:00
+  id: car_charge_detected
+  to: 'on'
+  trigger: state
+- entity_id: binary_sensor.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_dispatching
+  for: 00:01:00
+  id: car_charge_detected
+  to: 'on'
+  trigger: state
+- entity_id: binary_sensor.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_dispatching
+  for: 00:01:00
+  id: car_charge_detected
+  to: 'on'
+  trigger: state
+- entity_id: binary_sensor.tesla_wall_connector_contactor_closed
+  for:
+    minutes: 5
+  id: car_charge_stopped
+  to: 'off'
+  trigger: state
+- entity_id: sensor.meilin_charging
+  for:
+    minutes: 5
+  from: charging
+  id: car_charge_stopped
+  trigger: state
+- entity_id: binary_sensor.charging
+  for:
+    minutes: 5
+  id: car_charge_stopped
+  to: 'off'
+  trigger: state
+- entity_id: binary_sensor.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_dispatching
+  id: car_charge_stopped
+  trigger: state
+- entity_id: binary_sensor.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_dispatching
+  id: car_charge_stopped
+  trigger: state
+- id: off_peak_cycle
+  minutes: /30
+  trigger: time_pattern
+- entity_id: sensor.octopus_energy_electricity_19l4137057_2700005580134_current_rate
+  id: price_changed
+  trigger: state
+- below: 80
+  entity_id: sensor.rouse_house_pw3_percentage_charged
+  id: soc_below_80
+  trigger: numeric_state
+- at: '16:00:00'
+  id: afternoon_peak_start
+  trigger: time
+- entity_id: input_datetime.time_to_start_exporting
+  id: export_time_changed
+  trigger: state
+conditions:
+- condition: state
+  entity_id: input_boolean.holiday_mode
+  state: 'off'
+- condition: state
+  entity_id: binary_sensor.octopus_paid_saving_session_active
+  state: 'off'
+- condition: state
+  entity_id: input_boolean.manual_export_active
+  state: 'off'
+- condition: state
+  entity_id: input_boolean.start_manual_force_import
+  state: 'off'
+- condition: state
+  entity_id: input_boolean.power_hour_active
+  state: 'off'
+actions:
+- action: switch.turn_{{ schedule.allow_charging_from_grid }}
+  target:
+    entity_id:
+    - switch.rouse_house_pw3_allow_charging_from_grid
+- action: number.set_value
+  data:
+    value: '{{ schedule.charge_target_soc }}'
+  target:
+    entity_id:
+    - number.rouse_house_pw3_backup_reserve
+- action: select.select_option
+  data:
+    option: '{{ ''battery_ok'' if schedule.is_dump else ''pv_only'' }}'
+  target:
+    entity_id:
+    - select.rouse_house_pw3_allow_export
+- action: select.select_option
+  data:
+    option: '{{ schedule.op_mode }}'
+  target:
+    entity_id:
+    - select.rouse_house_pw3_operation_mode
+- action: teslemetry.time_of_use
+  data:
+    device_id: dd527e4bc7ab1a14f356f9973480e7f7
+    tou_settings: '{{ schedule.tou_settings }}'
+mode: single
+variables:
+  schedule: |-
+    {# Calculate current time windows #}
+    {% set now_dt = now() %}
+    {% set is_off_peak = (today_at('23:30') <= now_dt or now_dt < today_at('05:30')) %}
+    {% set soc_now = states('sensor.rouse_house_pw3_percentage_charged') | float(0) %}
+    {% set is_night_dump_window = (today_at('01:30') <= now_dt < today_at('02:50')) and soc_now > 3 %}
+    {% set is_night_refill_window = (today_at('02:50') <= now_dt < today_at('05:30')) or ((today_at('01:30') <= now_dt < today_at('02:50')) and soc_now <= 3) %}
+
+    {# Retrieve dynamic evening export start time helper #}
+    {% set export_start_str = states('input_datetime.time_to_start_exporting') %}
+    {% set export_start_time = today_at(export_start_str) if export_start_str is not none and export_start_str not in ['unknown', 'unavailable'] else today_at('21:50:00') %}
+    {% set is_evening_dump_window = (export_start_time <= now_dt < today_at('23:30')) %}
+
+    {# Determine plugged-in vehicle and its properties #}
+    {% set wall_state = states('binary_sensor.tesla_wall_connector_vehicle_connected') %}
+    {% set wall_plugged = wall_state == 'on' %}
+    {% set wall_vehicle = states('sensor.wall_connector_vehicle') %}
+    {% set tesla_in_charge = is_state('binary_sensor.meilin_charge_cable', 'on') or is_state('sensor.meilin_charging', 'charging') or is_state('binary_sensor.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_dispatching', 'on') %}
+    {% set renault_in_charge = is_state('binary_sensor.charging', 'on') or is_state('binary_sensor.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_dispatching', 'on') %}
+    {% if wall_plugged %}
+      {% if wall_vehicle == 'LRWYHCEK0NC406337' or is_state('binary_sensor.meilin_charge_cable', 'on') %}
+        {% set tesla_plugged = true %}
+        {% set renault_plugged = false %}
+      {% else %}
+        {% set tesla_plugged = false %}
+        {% set renault_plugged = true %}
+      {% endif %}
+    {% elif wall_state in ['unavailable', 'unknown'] %}
+      {% set tesla_plugged = tesla_in_charge %}
+      {% set renault_plugged = (not tesla_plugged) and renault_in_charge %}
+    {% else %}
+      {% set tesla_plugged = false %}
+      {% set renault_plugged = false %}
+    {% endif %}
+
+    {% if renault_plugged %}
+      {% set car_needs_charge = (states('sensor.battery') | float(0)) < (states('number.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_charge_target') | float(100)) %}
+      {% set car_active = is_state('binary_sensor.charging', 'on') or is_state('binary_sensor.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_dispatching', 'on') or is_state('binary_sensor.tesla_wall_connector_contactor_closed', 'on') %}
+    {% elif tesla_plugged %}
+      {% set car_needs_charge = (states('sensor.meilin_battery_level') | float(0)) < (states('number.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_charge_target') | float(100)) %}
+      {% set car_active = is_state('sensor.meilin_charging', 'charging') or is_state('binary_sensor.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_dispatching', 'on') or is_state('binary_sensor.tesla_wall_connector_contactor_closed', 'on') %}
+    {% else %}
+      {% set car_needs_charge = false %}
+      {% set car_active = false %}
+    {% endif %}
+
+    {% set active_charge = car_active and car_needs_charge %}
+    {% set soc = states('sensor.rouse_house_pw3_percentage_charged') | float(0) %}
+
+    {% set saving_session_active = is_state('binary_sensor.octopus_paid_saving_session_active', 'on') %}
+
+    {% set is_dump = (is_evening_dump_window or (is_night_dump_window and not active_charge)) if not saving_session_active else false %}
+    {% set allow_grid_charge = 'on' if (is_off_peak or active_charge) else 'off' %}
+    {% set charge_target_soc = 100 if (is_night_refill_window or (today_at('23:30') <= now_dt or now_dt < today_at('01:30')) or active_charge) else 0 %}
+    {% set op_mode = 'autonomous' if (is_dump or is_off_peak or active_charge) else 'self_consumption' %}
+
+    {% if is_dump %}
+      {% set tariff_code = 'PEAK-EXPORT-OVERRIDE' %}
+      {% set tariff_name = 'Peak Export Override' %}
+      {% set on_peak_import_price = 1.50 %}
+      {% set on_peak_export_price = 2.00 %}
+      {% set off_peak_export_price = 0.05 %}
+    {% elif active_charge %}
+      {% set tariff_code = 'OCTOPUS-GO-SMART-SLOT' %}
+      {% set tariff_name = 'Intelligent Octopus Go Smart Slot' %}
+      {% set on_peak_import_price = 0.30 %}
+      {% set on_peak_export_price = 0.15 %}
+      {% set off_peak_export_price = 0.15 %}
+    {% else %}
+      {% set tariff_code = 'OCTOPUS-GO' %}
+      {% set tariff_name = 'Intelligent Octopus Go Standard' %}
+      {% set on_peak_import_price = 0.30 %}
+      {% set on_peak_export_price = 0.15 %}
+      {% set off_peak_export_price = 0.15 %}
+    {% endif %}
+
+    {# Calculate TOU period boundaries for active charge, dump window, or standard schedule #}
+    {% if is_dump %}
+      {% if is_night_dump_window %}
+        {% set dump_start_h = 1 %}
+        {% set dump_start_m = 30 %}
+        {% set dump_end_h = 2 %}
+        {% set dump_end_m = 50 %}
+      {% else %}
+        {% set dump_start_h = export_start_time.hour | int %}
+        {% set dump_start_m = export_start_time.minute | int %}
+        {% set dump_end_h = 23 %}
+        {% set dump_end_m = 30 %}
+      {% endif %}
+      {% set off_peak_periods = [
+        {'fromDayOfWeek': 0, 'fromHour': 0, 'fromMinute': 0, 'toDayOfWeek': 6, 'toHour': dump_start_h, 'toMinute': dump_start_m},
+        {'fromDayOfWeek': 0, 'fromHour': dump_end_h, 'fromMinute': dump_end_m, 'toDayOfWeek': 6, 'toHour': 0, 'toMinute': 0}
+      ] %}
+      {% set on_peak_periods = [
+        {'fromDayOfWeek': 0, 'fromHour': dump_start_h, 'fromMinute': dump_start_m, 'toDayOfWeek': 6, 'toHour': dump_end_h, 'toMinute': dump_end_m}
+      ] %}
+    {% elif active_charge and not is_off_peak %}
+      {% set off_peak_start_h = now_dt.hour | int %}
+      {% set off_peak_start_m = 0 %}
+      {% set off_peak_end_h = 5 %}
+      {% set off_peak_end_m = 30 %}
+      {% set off_peak_periods = [
+        {'fromDayOfWeek': 0, 'fromHour': off_peak_start_h, 'fromMinute': off_peak_start_m, 'toDayOfWeek': 6, 'toHour': off_peak_end_h, 'toMinute': off_peak_end_m}
+      ] %}
+      {% set on_peak_periods = [
+        {'fromDayOfWeek': 0, 'fromHour': 5, 'fromMinute': 30, 'toDayOfWeek': 6, 'toHour': off_peak_start_h, 'toMinute': off_peak_start_m}
+      ] %}
+    {% else %}
+      {% set off_peak_periods = [
+        {'fromDayOfWeek': 0, 'fromHour': 23, 'fromMinute': 30, 'toDayOfWeek': 6, 'toHour': 5, 'toMinute': 30}
+      ] %}
+      {% set on_peak_periods = [
+        {'fromDayOfWeek': 0, 'fromHour': 5, 'fromMinute': 30, 'toDayOfWeek': 6, 'toHour': 23, 'toMinute': 30}
+      ] %}
+    {% endif %}
+
+    {% set tou_settings = {
+      'break_even_cost_to_charge': 0,
+      'mode': 'time_of_use',
+      'tariff_content_v2': {
+        'code': tariff_code,
+        'currency': 'GBP',
+        'daily_charges': [{'amount': 0, 'name': 'Charge'}],
+        'demand_charges': {'ALL': {'rates': {'ALL': 0}}},
+        'energy_charges': {
+          'ALL': {'rates': {'ALL': 0}},
+          'AllYear': {'rates': {'OFF_PEAK': 0.07, 'ON_PEAK': on_peak_import_price | float}}
+        },
+        'name': tariff_name,
+        'seasons': {
+          'AllYear': {
+            'fromDay': 1, 'fromMonth': 1, 'toDay': 31, 'toMonth': 12,
+            'tou_periods': {
+              'OFF_PEAK': {'periods': off_peak_periods},
+              'ON_PEAK': {'periods': on_peak_periods}
+            }
+          }
+        },
+        'sell_tariff': {
+          'currency': 'GBP',
+          'daily_charges': [{'amount': 0, 'name': 'Charge'}],
+          'demand_charges': {'ALL': {'rates': {'ALL': 0}}},
+          'energy_charges': {
+            'ALL': {'rates': {'ALL': 0}},
+            'AllYear': {'rates': {'OFF_PEAK': off_peak_export_price | float, 'ON_PEAK': on_peak_export_price | float}}
+          },
+          'name': tariff_name,
+          'seasons': {
+            'AllYear': {
+              'fromDay': 1, 'fromMonth': 1, 'toDay': 31, 'toMonth': 12,
+              'tou_periods': {
+                'OFF_PEAK': {'periods': off_peak_periods},
+                'ON_PEAK': {'periods': on_peak_periods}
+              }
+            }
+          },
+          'utility': 'Octopus Energy'
+        },
+        'utility': 'Octopus Energy',
+        'version': 1
+      }
+    } %}
+    {{ {
+      'allow_charging_from_grid': allow_grid_charge,
+      'charge_target_soc': charge_target_soc,
+      'is_dump': is_dump,
+      'op_mode': op_mode,
+      'tou_settings': tou_settings
+    } }}

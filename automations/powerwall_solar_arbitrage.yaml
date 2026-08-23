@@ -1,0 +1,45 @@
+id: powerwall_solar_arbitrage
+alias: 'Powerwall: Solar Arbitrage Mode'
+description: During peak summer solar hours (10:00 - 16:00), enables battery export when SoC exceeds 97% to prevent solar
+  curtailment.
+triggers:
+- above: 97
+  entity_id: sensor.rouse_house_pw3_percentage_charged
+  id: battery_full
+  trigger: numeric_state
+- below: 80
+  entity_id: sensor.rouse_house_pw3_percentage_charged
+  id: battery_drained
+  trigger: numeric_state
+conditions:
+- condition: state
+  entity_id: input_boolean.holiday_mode
+  state: 'off'
+- condition: state
+  entity_id: input_boolean.manual_export_active
+  state: 'off'
+- after: '10:00:00'
+  before: '16:00:00'
+  condition: time
+actions:
+- else:
+  - action: automation.trigger
+    target:
+      entity_id: automation.powerwall_daily_scheduler
+    data:
+      skip_condition: false
+  if:
+  - condition: trigger
+    id: battery_full
+  then:
+  - action: select.select_option
+    data:
+      option: battery_ok
+    target:
+      entity_id: select.rouse_house_pw3_allow_export
+  - action: select.select_option
+    data:
+      option: autonomous
+    target:
+      entity_id: select.rouse_house_pw3_operation_mode
+mode: restart

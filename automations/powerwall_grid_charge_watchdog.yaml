@@ -1,0 +1,60 @@
+id: powerwall_grid_charge_watchdog
+alias: 'Powerwall: Grid Charge Watchdog'
+description: Protects against unintended peak grid charging. Requires BOTH battery charging (>2 kW) AND real grid import (>1
+  kW) so solar-only charging never false-positives. Remediation retriggers the scheduler with conditions enforced, so it cannot
+  fire during Saving Sessions/Power Hour/manual overrides, and day mode now keeps the grid-charge switch off.
+triggers:
+- below: -2
+  entity_id: sensor.rouse_house_pw3_battery_power
+  for: 00:01:00
+  id: battery_charging
+  trigger: numeric_state
+- above: 2
+  entity_id: sensor.rouse_house_pw3_grid_power
+  for: 00:01:00
+  id: grid_importing
+  trigger: numeric_state
+conditions:
+- condition: state
+  entity_id: input_boolean.holiday_mode
+  state: 'off'
+- condition: state
+  entity_id: input_boolean.power_hour_active
+  state: 'off'
+- condition: state
+  entity_id: input_boolean.start_manual_force_import
+  state: 'off'
+- condition: state
+  entity_id: binary_sensor.octopus_paid_saving_session_active
+  state: 'off'
+- condition: state
+  entity_id: binary_sensor.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_dispatching
+  state: 'off'
+- condition: state
+  entity_id: binary_sensor.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_dispatching
+  state: 'off'
+- after: 05:30:00
+  before: '23:30:00'
+  condition: time
+- below: -2
+  condition: numeric_state
+  entity_id: sensor.rouse_house_pw3_battery_power
+- above: 1
+  condition: numeric_state
+  entity_id: sensor.rouse_house_pw3_grid_power
+actions:
+- action: system_log.write
+  data:
+    level: warning
+    logger: automation.powerwall_watchdog
+    message: 'Powerwall Watchdog: Grid charging detected during peak daytime hours (battery charging >2 kW with grid import
+      >1 kW). Disabling grid charging switch and re-running scheduler.'
+- action: switch.turn_off
+  target:
+    entity_id: switch.rouse_house_pw3_allow_charging_from_grid
+- action: automation.trigger
+  target:
+    entity_id: automation.powerwall_daily_scheduler
+  data:
+    skip_condition: false
+mode: single

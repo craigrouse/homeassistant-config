@@ -1,0 +1,23 @@
+id: '1702159551670'
+alias: 'Octopus Saving Session: Set time of next session'
+description: Automatically updates input_datetime helpers with next Octoplus saving session timestamps using the new event
+  entity.
+triggers:
+- entity_id: event.octopus_energy_a_dbae4963_octoplus_saving_session_events
+  trigger: state
+actions:
+- action: input_datetime.set_datetime
+  data:
+    datetime: '{% set events = state_attr(''event.octopus_energy_a_dbae4963_octoplus_saving_session_events'', ''joined_events'')
+      | default([], true) %}{% set future = events | selectattr(''start'', ''>'', now()) | sort(attribute=''start'') | list
+      %}{{ future[0].start.strftime(''%Y-%m-%d %H:%M:%S'') if future | length > 0 else ''2026-08-12 18:00:00'' }}'
+  target:
+    entity_id: input_datetime.octopus_saving_session_next_start
+- action: input_datetime.set_datetime
+  data:
+    datetime: '{% set events = state_attr(''event.octopus_energy_a_dbae4963_octoplus_saving_session_events'', ''joined_events'')
+      | default([], true) %}{% set future = events | selectattr(''start'', ''>'', now()) | sort(attribute=''start'') | list
+      %}{{ future[0].end.strftime(''%Y-%m-%d %H:%M:%S'') if future | length > 0 else ''2026-08-12 20:00:00'' }}'
+  target:
+    entity_id: input_datetime.octopus_saving_session_end
+mode: single

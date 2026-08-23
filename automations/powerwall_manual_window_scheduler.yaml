@@ -1,0 +1,64 @@
+id: powerwall_manual_window_scheduler
+alias: 'Powerwall: Manual Window Scheduler'
+description: 'Lets a force export or force import be scheduled for a time window instead of started immediately: set the From/Until
+  times, flip the matching Window Armed toggle, and at the From time this computes the duration (quarter-hour resolution,
+  clamped 0.25-6h, midnight-crossing handled), disarms itself (one-shot), and presses the same Manual Export/Import button
+  the dashboard uses - the existing Manual Export/Import Controllers then run the window exactly as if started by hand.'
+triggers:
+- trigger: time
+  at: input_datetime.manual_export_window_from
+  id: export_window
+- trigger: time
+  at: input_datetime.manual_import_window_from
+  id: import_window
+conditions: []
+actions:
+- choose:
+  - conditions:
+    - condition: trigger
+      id:
+      - export_window
+    - condition: state
+      entity_id: input_boolean.manual_export_window_armed
+      state: 'on'
+    sequence:
+    - action: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.manual_export_window_armed
+    - action: input_number.set_value
+      data:
+        value: |-
+          {% set f = today_at(states('input_datetime.manual_export_window_from')) %}
+          {% set u = today_at(states('input_datetime.manual_export_window_until')) %}
+          {% set u = u + timedelta(days=1) if u <= f else u %}
+          {{ [ [ ((u - f).total_seconds() / 900) | round(0) * 0.25, 0.25 ] | max, 6 ] | min }}
+      target:
+        entity_id: input_number.manual_export_duration_hours
+    - action: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.manual_export_active
+  - conditions:
+    - condition: trigger
+      id:
+      - import_window
+    - condition: state
+      entity_id: input_boolean.manual_import_window_armed
+      state: 'on'
+    sequence:
+    - action: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.manual_import_window_armed
+    - action: input_number.set_value
+      data:
+        value: |-
+          {% set f = today_at(states('input_datetime.manual_import_window_from')) %}
+          {% set u = today_at(states('input_datetime.manual_import_window_until')) %}
+          {% set u = u + timedelta(days=1) if u <= f else u %}
+          {{ [ [ ((u - f).total_seconds() / 900) | round(0) * 0.25, 0.25 ] | max, 6 ] | min }}
+      target:
+        entity_id: input_number.manual_import_duration_hours
+    - action: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.start_manual_force_import
+mode: queued
+max: 2

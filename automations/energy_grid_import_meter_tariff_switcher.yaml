@@ -1,0 +1,36 @@
+id: grid_import_meter_tariff_switcher
+alias: 'Energy: Grid Import Meter Tariff Switcher'
+description: 'Keeps the Daily Grid Import utility meter''s tariff in sync with the live Octopus rate: cheap when the current
+  rate is below 10p (off-peak window, dispatches, free sessions), peak otherwise. Resyncs on HA start.'
+triggers:
+- trigger: numeric_state
+  entity_id: sensor.octopus_energy_electricity_19l4137057_2700005580134_current_rate
+  below: 0.1
+  id: rate_cheap
+- trigger: numeric_state
+  entity_id: sensor.octopus_energy_electricity_19l4137057_2700005580134_current_rate
+  above: 0.1
+  id: rate_peak
+- trigger: homeassistant
+  event: start
+  id: ha_start
+conditions: []
+actions:
+- if:
+  - condition: numeric_state
+    entity_id: sensor.octopus_energy_electricity_19l4137057_2700005580134_current_rate
+    below: 0.1
+  then:
+  - action: select.select_option
+    data:
+      option: cheap
+    target:
+      entity_id: select.daily_grid_import
+  else:
+  - action: select.select_option
+    data:
+      option: peak
+    target:
+      entity_id: select.daily_grid_import
+mode: queued
+max: 5

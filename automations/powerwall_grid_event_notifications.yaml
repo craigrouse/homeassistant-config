@@ -1,0 +1,58 @@
+id: powerwall_grid_event_notifier
+alias: 'Powerwall: Grid Event Phone Notification'
+description: Sends instant push notifications to Craig's Pixel 10 Pro XL whenever any grid event (Saving Session, Power Hour,
+  Overnight Dump/Refill, or Manual Override) starts or ends.
+triggers:
+- entity_id: calendar.octopus_energy_a_dbae4963_octoplus_power_down
+  id: calendar_change
+  trigger: state
+- entity_id: input_boolean.power_hour_active
+  id: power_hour_toggle
+  trigger: state
+- entity_id: input_boolean.manual_export_active
+  id: manual_export_toggle
+  trigger: state
+- entity_id: input_boolean.start_manual_force_import
+  id: manual_import_toggle
+  trigger: state
+- entity_id: automation.powerwall_saving_session_controller
+  id: saving_session_auto
+  trigger: state
+- at: 01:30:00
+  id: night_dump_alert
+  trigger: time
+- at: 02:50:00
+  id: night_charge_alert
+  trigger: time
+conditions: []
+actions:
+- action: notify.send_message
+  data:
+    message: |-
+      Event: {{ trigger.to_state.name if trigger.to_state is defined else trigger.id }}
+      Battery SoC: {{ states('sensor.rouse_house_pw3_percentage_charged') | round(1) }}%
+      Reserve Target: {{ states('number.rouse_house_pw3_backup_reserve') }}%
+      Export Mode: {{ states('select.rouse_house_pw3_allow_export') }}
+      Operation Mode: {{ states('select.rouse_house_pw3_operation_mode') }}
+      Grid Charge Switch: {{ states('switch.rouse_house_pw3_allow_charging_from_grid') }}
+      Battery Power: {{ states('sensor.rouse_house_pw3_battery_power') }} kW
+    title: |-
+      {% if is_state('input_boolean.manual_export_active', 'on') %}
+      🔋 Powerwall: Manual Force Export ACTIVE
+      {% elif is_state('input_boolean.start_manual_force_import', 'on') %}
+      ⚡ Powerwall: Manual Force Import ACTIVE
+      {% elif 'saving session' in (state_attr('calendar.octopus_energy_a_dbae4963_octoplus_power_down', 'message') | default('') | lower) and is_state('calendar.octopus_energy_a_dbae4963_octoplus_power_down', 'on') %}
+      💰 Powerwall: Saving Session EXPORT Active (£2.90/kWh)
+      {% elif is_state('input_boolean.power_hour_active', 'on') %}
+      🎉 Powerwall: Free Power Hour IMPORT Active
+      {% elif trigger.id == 'night_dump_alert' %}
+      💸 Powerwall: Overnight Arbitrage DUMP Started (01:30 AM)
+      {% elif trigger.id == 'night_charge_alert' %}
+      🔌 Powerwall: Overnight Off-Peak REFILL Started (02:50, or earlier if the dump ran the battery empty)
+      {% else %}
+      ⚡ Powerwall: Grid Event State Updated
+      {% endif %}
+  target:
+    entity_id: notify.pixel_10_pro_xl
+max: 10
+mode: parallel

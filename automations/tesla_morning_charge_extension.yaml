@@ -1,0 +1,85 @@
+id: tesla_morning_charge_extension
+alias: 'Tesla: Morning Charge Extension'
+description: Automatically requests additional morning charging slots from Octopus by shifting the target end time to 11am
+  if battery SoC is below desired limit by shadow ready by time, checking the 6-hour daily charging limit.
+triggers:
+- at: input_datetime.tesla_shadow_ready_by
+  id: check_extension_time
+  trigger: time
+- entity_id: input_boolean.home_for_morning
+  from: 'off'
+  id: check_extension_home
+  to: 'on'
+  trigger: state
+- at: '12:00:00'
+  id: reset_extension_midday
+  trigger: time
+- at: '22:20:00'
+  id: reset_extension_night
+  trigger: time
+actions:
+- choose:
+  - conditions:
+    - condition: or
+      conditions:
+      - condition: trigger
+        id: check_extension_time
+      - condition: trigger
+        id: check_extension_home
+    - condition: state
+      entity_id: input_boolean.home_for_morning
+      state: 'on'
+    - condition: state
+      entity_id: binary_sensor.tesla_wall_connector_vehicle_connected
+      state: 'on'
+    - condition: state
+      entity_id: sensor.wall_connector_vehicle
+      state: LRWYHCEK0NC406337
+    - condition: template
+      value_template: '{{ now() >= today_at(states(''input_datetime.tesla_shadow_ready_by'')) and now().hour < 11 }}'
+    - condition: template
+      value_template: '{{ states(''sensor.meilin_battery_level'') | float(0) < states(''input_number.tesla_desired_soc'')
+        | float(80) }}'
+    - condition: template
+      value_template: '{{ states(''sensor.tesla_charging_time_daily'') | float(0) < 6.0 }}'
+    - condition: template
+      value_template: '{{ states(''select.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_target_time'') !=
+        ''11:00'' }}'
+    sequence:
+    - action: select.select_option
+      data:
+        option: '11:00'
+      target:
+        entity_id:
+        - select.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_target_time
+    - action: persistent_notification.create
+      data:
+        message: 'Tesla charging target time extended to 11:00 to request extra slots. Current SoC: {{ states(''sensor.meilin_battery_level'')
+          }}%, Daily charging time: {{ states(''sensor.tesla_charging_time_daily'') }} hours.'
+        title: Tesla Morning Charge Extension
+  - conditions:
+    - condition: or
+      conditions:
+      - condition: trigger
+        id: reset_extension_midday
+      - condition: trigger
+        id: reset_extension_night
+    - condition: state
+      entity_id: select.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_target_time
+      state: '11:00'
+    sequence:
+    - action: select.select_option
+      data:
+        option: 05:30
+      target:
+        entity_id:
+        - select.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_target_time
+    - action: input_boolean.turn_off
+      target:
+        entity_id:
+        - input_boolean.home_for_morning
+    - action: persistent_notification.create
+      data:
+        message: Tesla charging target time reset back to default (05:30) after 11:00 extension.
+        title: Tesla Charge Target Reset
+mode: single
