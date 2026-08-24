@@ -185,7 +185,9 @@ variables:
       {% set car_active = false %}
     {% endif %}
 
-    {% set active_charge = car_active and car_needs_charge %}
+    {# active_charge drives the SMART-SLOT posture (PW grid-charges at 6.9p). Tightened 2026-08-24: requires an ACTUAL dispatch or the off-peak window - contactor-closed alone is NOT a slot (a ~100% completion top-off closed the contactor at 11:53 and the PW grid-charged at peak rate until midday; the watchdog's scheduler re-trigger kept re-arming it). car_active stays loose for dump suppression. #}
+    {% set dispatch_active = is_state('binary_sensor.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_dispatching', 'on') or is_state('binary_sensor.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_dispatching', 'on') %}
+    {% set active_charge = car_active and car_needs_charge and (dispatch_active or is_off_peak) %}
     {% set soc = states('sensor.rouse_house_pw3_percentage_charged') | float(0) %}
 
     {% set saving_session_active = is_state('binary_sensor.octopus_paid_saving_session_active', 'on') %}
