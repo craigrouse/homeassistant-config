@@ -1,0 +1,141 @@
+id: '1787568524268'
+alias: 'Powerwall: Rogue Export Watchdog'
+description: 'Counterpart to the Grid Export Watchdog (which fixes export STUCK AT ZERO during dumps): this one force-stops
+  the battery exporting when it SHOULDN''T be - the gateway occasionally keeps running a stale export plan after a manual
+  export or dump ends, ignoring the pushed day-mode state (seen 2026-08-24 11:31-11:44: HA showed self_consumption + pv_only
+  while the battery dumped 13 kW to grid at 49% SoC). Detection: battery discharging >1.5 kW AND grid export >1.5 kW for 4
+  minutes outside every sanctioned export window (manual export, Power Hour, paid Saving Session, the evening dump from time_to_start_exporting,
+  the 01:30-02:50 night dump, and solar-arbitrage hours with a full-ish battery). Remediation (the sequence that worked live):
+  export permission to NEVER, fresh tariff push via the Daily Scheduler, NEVER re-asserted, then mode toggles until the export
+  stops (max 4 rounds), finally hand back to the scheduler. Escalates to Craig''s phone if it cannot stop it.'
+triggers:
+- trigger: template
+  value_template: '{{ (states(''sensor.rouse_house_pw3_grid_power'') | float(0)) < -1.5 and (states(''sensor.rouse_house_pw3_battery_power'')
+    | float(0)) > 1.5 }}'
+  for: 00:04:00
+  id: rogue_export
+  note: Battery actively discharging INTO the grid, sustained 4 min (power sensors tick ~2 min)
+conditions:
+- condition: state
+  entity_id: input_boolean.manual_export_active
+  state: 'off'
+- condition: state
+  entity_id: input_boolean.power_hour_active
+  state: 'off'
+- condition: state
+  entity_id: binary_sensor.octopus_paid_saving_session_active
+  state: 'off'
+- condition: template
+  value_template: '{{ not (today_at(states(''input_datetime.time_to_start_exporting'') if states(''input_datetime.time_to_start_exporting'')
+    not in [''unknown'', ''unavailable''] else ''21:50:00'') <= now() < today_at(''23:30:00'')) }}'
+  note: Not the evening dump window
+- condition: not
+  conditions:
+  - condition: time
+    after: 01:30:00
+    before: 02:50:00
+  note: Not the night dump window
+- condition: not
+  conditions:
+  - condition: and
+    conditions:
+    - condition: time
+      after: '10:00:00'
+      before: '16:00:00'
+    - condition: numeric_state
+      entity_id: sensor.rouse_house_pw3_percentage_charged
+      above: 80
+  note: Not solar-arbitrage surplus export (full-ish battery, summer midday)
+actions:
+- action: system_log.write
+  data:
+    level: warning
+    logger: automation.powerwall_rogue_export_watchdog
+    message: 'Rogue export detected: battery discharging to grid outside every sanctioned window. Forcing stop (export=never
+      + tariff refresh + mode toggles).'
+- action: notify.send_message
+  data:
+    title: '⚠️ Powerwall: rogue export - forcing stop'
+    message: Battery was exporting {{ states('sensor.rouse_house_pw3_battery_power') }} kW to grid outside any sanctioned
+      window (SoC {{ states('sensor.rouse_house_pw3_percentage_charged') | round(0) }}%). Running the force-stop sequence.
+  target:
+    entity_id: notify.pixel_10_pro_xl
+  continue_on_error: true
+- action: select.select_option
+  data:
+    option: never
+  target:
+    entity_id: select.rouse_house_pw3_allow_export
+- action: automation.trigger
+  target:
+    entity_id: automation.powerwall_daily_scheduler
+  data:
+    skip_condition: false
+  note: Fresh TOU push - a stale tariff is usually the root cause
+- action: select.select_option
+  data:
+    option: never
+  target:
+    entity_id: select.rouse_house_pw3_allow_export
+  note: Re-assert never (the scheduler just set pv_only/battery_ok)
+- repeat:
+    until:
+    - condition: numeric_state
+      entity_id: sensor.rouse_house_pw3_grid_power
+      above: -1
+    sequence:
+    - action: select.select_option
+      data:
+        option: self_consumption
+      target:
+        entity_id: select.rouse_house_pw3_operation_mode
+    - delay:
+        seconds: 10
+    - action: select.select_option
+      data:
+        option: autonomous
+      target:
+        entity_id: select.rouse_house_pw3_operation_mode
+    - delay:
+        seconds: 10
+    - action: select.select_option
+      data:
+        option: self_consumption
+      target:
+        entity_id: select.rouse_house_pw3_operation_mode
+    - delay:
+        seconds: 100
+      note: Let the ~2-min power sensors report the effect before re-checking
+    - if:
+      - condition: template
+        value_template: '{{ repeat.index >= 4 }}'
+      then:
+      - action: notify.send_message
+        data:
+          title: '🚨 Powerwall: rogue export WON''T STOP'
+          message: 4 toggle rounds failed to stop the export. Export permission is pinned to NEVER. Intervene via the Tesla
+            app.
+        target:
+          entity_id: notify.pixel_10_pro_xl
+        continue_on_error: true
+      - stop: Export still running after 4 toggle rounds - export left pinned to never
+        error: true
+  note: The mode-toggle nudge, mirrored from the export-start kickstart
+- action: notify.send_message
+  data:
+    title: '✅ Powerwall: rogue export stopped'
+    message: Export halted. Handing control back to the Daily Scheduler (normal posture restored).
+  target:
+    entity_id: notify.pixel_10_pro_xl
+  continue_on_error: true
+- action: select.select_option
+  data:
+    option: pv_only
+  target:
+    entity_id: select.rouse_house_pw3_allow_export
+- action: automation.trigger
+  target:
+    entity_id: automation.powerwall_daily_scheduler
+  data:
+    skip_condition: false
+mode: single
