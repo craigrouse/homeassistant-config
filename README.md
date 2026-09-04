@@ -1,6 +1,6 @@
 # Home Assistant Config — Rouse House Energy System
 
-Snapshot of the important Home Assistant configuration for the home energy setup, exported from the live instance. Automations live in [`automations/`](automations/) as YAML (converted from the HA config API's JSON; the `alias` matches the automation in HA). Helpers are documented in [`docs/helpers.md`](docs/helpers.md). Open work is tracked on the [kanban board](https://github.com/users/craigrouse/projects/3/views/1) and mirrored in [`TODO.md`](TODO.md).
+Snapshot of the important Home Assistant configuration for the home energy setup, exported from the live instance. Automations live in [`automations/`](automations/) as YAML (converted from the HA config API's JSON; the `alias` matches the automation in HA). Helpers are documented in [`docs/helpers.md`](docs/helpers.md). Resume point after the Sept 2026 gateway-stall week: [`docs/handoff-2026-09-04.md`](docs/handoff-2026-09-04.md). Open work is tracked on the [kanban board](https://github.com/users/craigrouse/projects/3/views/1) and mirrored in [`TODO.md`](TODO.md).
 
 ## The setup
 
@@ -30,6 +30,7 @@ slot handling)                                                dynamic free-windo
         ├── Intelligent Slot delegate (cancels manual export, re-runs scheduler)
         ├── Grid Charge Watchdog (battery charging >2 kW AND grid import >1 kW at peak)
         ├── Grid Export Watchdog (export configured but stuck at 0 kW → gateway nudge)
+        ├── Grid Fill Watchdog (fill posture pushed but battery not charging >3 min → mode toggle + re-run)
         └── Solar Arbitrage (SoC 97↔80 hysteresis, 10:00–16:00)
 
 Manual layer: Manual Export/Import Controllers (dashboard buttons + duration sliders,
@@ -46,6 +47,7 @@ export) + sensor.grid_margin_today (export×12p − cheap×6.9p − peak×30.4p)
 
 ## Conventions / hard-won rules
 
+- **Tariff first, mode last, then verify.** Every TOU writer pushes the tariff, waits 15 s, then sets grid switch → reserve → export → operation mode. Since gateway firmware 26.2 the Powerwall checks the tariff before honouring reserve/mode changes (2026-09-02: three stalls in one evening with the old tariff-last order). Never trust a pushed posture: the Export/Fill watchdogs and the controllers' kickstarts test GRID power (export) or BATTERY power (fill) after 3 min and toggle `self_consumption → 45 s → autonomous` to make the gateway re-plan. Battery-power alone is NOT an export test (house load hides a stalled export). Stuck tests read the LOCAL gateway sensors (`sensor.powerwall_192_168_1_182_site_power` / `_battery_power`, 30 s) - the Teslemetry grid/battery sensors are cloud-polled and lag ~1 min (2026-09-03: a stale reading toggled the mode against an export that had already started). Paid sessions start 5 min early (calendar offset -5m, TOU spike opens at T-5) so the gateway's ~3-4 min reaction time lands before the session.
 - **Never call `automation.trigger` on the Daily Scheduler without `skip_condition: false`** — the default bypasses its session/manual guards (this class of bug clobbered session tariffs for months before being fixed on 2026-08-23).
 - **Only the Daily Scheduler and the session/manual controllers push TOU tariffs** — one writer per situation, gated so exactly one is in charge at a time.
 - **Session type is decided by `octopoints_per_kwh`** on the joined event (0 = free electricity, >0 = paid saving session). Never by calendar message text — free and paid sessions both appear on both Octoplus calendars with the message "Octopus Energy Saving Session".

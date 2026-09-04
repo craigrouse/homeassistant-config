@@ -1,0 +1,89 @@
+id: powerwall_grid_fill_watchdog
+alias: 'Powerwall: Grid Fill Watchdog'
+description: 'Mirror of the Grid Export Watchdog for the FILL direction (created 2026-09-02 after the 22:30 smart-slot fill
+  never started: the scheduler pushed grid-charging on + reserve 100 + autonomous, the gateway drained its last 2% into the
+  car and then sat idle at 0% for 25 minutes; a manual self_consumption->autonomous toggle started the 10 kW import within
+  90s). Intent marker = grid charging switch ON and backup reserve 100 in autonomous - the posture the Daily Scheduler pushes
+  for a smart-slot fill or the overnight refill. If the battery is still not charging (battery power > -1 kW) 3 minutes into
+  that posture, and a car dispatch is active or it is inside 23:30-05:00, toggle self_consumption -> 45s -> autonomous and
+  re-trigger the scheduler (which now pushes the tariff first). Retries every 3 minutes up to 4 rounds, phone alert on round
+  3. Deliberately narrow: SoC < 90 (fw 26 taper near full), only during dispatches or the deep-night window (the gateway may
+  legitimately defer parts of a long cheap window), and never during sessions or manual overrides (they have their own loops).
+  Exits as soon as charging starts or the scheduler drops the fill posture.'
+triggers:
+- trigger: template
+  for: 00:03:00
+  id: fill_stuck
+  value_template: '{{ is_state(''switch.rouse_house_pw3_allow_charging_from_grid'', ''on'') and is_state(''select.rouse_house_pw3_operation_mode'',
+    ''autonomous'') and (states(''number.rouse_house_pw3_backup_reserve'') | float(0)) >= 100 and (states(''sensor.rouse_house_pw3_battery_power'')
+    | float(0)) > -1.0 and (states(''sensor.rouse_house_pw3_percentage_charged'') | float(100)) < 90 and (is_state(''binary_sensor.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_dispatching'',
+    ''on'') or is_state(''binary_sensor.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_dispatching'', ''on'')
+    or now() >= today_at(''23:30'') or now() < today_at(''05:00'')) }}'
+conditions:
+- condition: state
+  entity_id: binary_sensor.octopus_paid_saving_session_active
+  state: 'off'
+- condition: state
+  entity_id: input_boolean.power_hour_active
+  state: 'off'
+- condition: state
+  entity_id: input_boolean.start_manual_force_import
+  state: 'off'
+- condition: state
+  entity_id: input_boolean.manual_export_active
+  state: 'off'
+actions:
+- repeat:
+    sequence:
+    - action: system_log.write
+      data:
+        level: warning
+        logger: automation.powerwall_grid_fill_watchdog
+        message: 'Powerwall Grid Fill Watchdog: fill posture pushed but battery not charging (attempt {{ repeat.index }}).
+          Toggling self_consumption -> 45s -> autonomous and re-running the scheduler.'
+    - action: select.select_option
+      data:
+        option: self_consumption
+      target:
+        entity_id: select.rouse_house_pw3_operation_mode
+    - delay:
+        seconds: 45
+    - action: select.select_option
+      data:
+        option: autonomous
+      target:
+        entity_id: select.rouse_house_pw3_operation_mode
+    - action: automation.trigger
+      target:
+        entity_id: automation.powerwall_daily_scheduler
+      data:
+        skip_condition: false
+      note: Scheduler re-pushes the fill posture tariff-first; skip_condition false keeps its session/manual guards
+    - if:
+      - condition: template
+        value_template: '{{ repeat.index == 3 }}'
+      then:
+      - action: notify.send_message
+        data:
+          title: '⚠️ Powerwall: Grid fill STILL not starting'
+          message: 3 gateway nudges failed - the Powerwall is not grid charging despite reserve 100 / grid charging on / autonomous.
+            SoC {{ states('sensor.rouse_house_pw3_percentage_charged') | round(0) }}%. Check the Tesla app.
+        target:
+          entity_id: notify.pixel_10_pro_xl
+    - delay:
+        minutes: 3
+    until:
+    - condition: or
+      conditions:
+      - condition: numeric_state
+        entity_id: sensor.rouse_house_pw3_battery_power
+        below: -1
+      - condition: state
+        entity_id: switch.rouse_house_pw3_allow_charging_from_grid
+        state: 'off'
+      - condition: numeric_state
+        entity_id: number.rouse_house_pw3_backup_reserve
+        below: 100
+      - condition: template
+        value_template: '{{ repeat.index >= 4 }}'
+mode: single

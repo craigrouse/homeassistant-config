@@ -1,7 +1,19 @@
 id: '1780438384579'
 alias: 'Powerwall: Daily Scheduler'
-description: Master controller for all standard daily Powerwall state transitions, overnight arbitrage, EV slot sync, and
-  safety protections.
+description: 'Master controller for all standard daily Powerwall state transitions, overnight arbitrage, EV slot sync, and
+  safety protections. TOU pushed to the gateway ends off-peak at 05:15 (not 05:30): the gateway sometimes finishes its charge
+  plan with a full-rate sprint that straddles the boundary (1.7 kWh of peak-rate import on 2026-08-26), so a 15-minute buffer
+  keeps the sprint inside the cheap window. The 05:30 triggers/windows here are unchanged deliberately - only the tariff boundary
+  moves. Charge-cap guard (2026-08-29): daytime smart-slot posture additionally requires sensor.tesla_charging_time_daily
+  < 6h (Octopus 6h/day smart-charge cap, 12:00-12:00 window); the charge_cap_reached trigger re-runs the scheduler the moment
+  the cap is crossed mid-dispatch so the PW never grid-charges at peak. TARIFF-FIRST ORDERING (2026-09-02): the TOU push now
+  goes first, then a 15s settle, then grid switch, reserve, export and finally operation mode. Since gateway firmware 26.2
+  the Powerwall checks the tariff before honouring reserve/mode/charging changes (PowerSync findings in alandtse/tesla#1171);
+  pushing the tariff LAST meant reserve/mode landed against the OLD tariff and the gateway ignored them - the 2026-09-02 22:30
+  smart-slot fill never started until a manual mode toggle at 22:57. Mode is deliberately last: the mode write is what makes
+  the gateway re-plan. 2026-09-04: the evening dump is paused for any live car dispatch (smart-slot refill posture instead)
+  and resumes when the slot ends; the evening planner now subtracts planned slot time and adds the expected refill when computing
+  the dump start.'
 triggers:
 - at: input_datetime.time_to_start_exporting
   id: evening_export_start
@@ -97,6 +109,10 @@ triggers:
 - entity_id: input_datetime.time_to_start_exporting
   id: export_time_changed
   trigger: state
+- entity_id: sensor.tesla_charging_time_daily
+  above: 5.99
+  id: charge_cap_reached
+  trigger: numeric_state
 conditions:
 - condition: state
   entity_id: binary_sensor.octopus_paid_saving_session_active
@@ -111,6 +127,12 @@ conditions:
   entity_id: input_boolean.power_hour_active
   state: 'off'
 actions:
+- action: teslemetry.time_of_use
+  data:
+    device_id: dd527e4bc7ab1a14f356f9973480e7f7
+    tou_settings: '{{ schedule.tou_settings }}'
+- delay:
+    seconds: 15
 - action: switch.turn_{{ schedule.allow_charging_from_grid }}
   target:
     entity_id:
@@ -133,10 +155,6 @@ actions:
   target:
     entity_id:
     - select.rouse_house_pw3_operation_mode
-- action: teslemetry.time_of_use
-  data:
-    device_id: dd527e4bc7ab1a14f356f9973480e7f7
-    tou_settings: '{{ schedule.tou_settings }}'
 mode: single
 variables:
   schedule: |-
@@ -187,12 +205,15 @@ variables:
 
     {# active_charge drives the SMART-SLOT posture (PW grid-charges at 6.9p). Tightened 2026-08-24: requires an ACTUAL dispatch or the off-peak window - contactor-closed alone is NOT a slot (a ~100% completion top-off closed the contactor at 11:53 and the PW grid-charged at peak rate until midday; the watchdog's scheduler re-trigger kept re-arming it). car_active stays loose for dump suppression. #}
     {% set dispatch_active = is_state('binary_sensor.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_dispatching', 'on') or is_state('binary_sensor.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_dispatching', 'on') %}
-    {% set active_charge = car_active and car_needs_charge and (dispatch_active or is_off_peak) %}
+    {# Octopus smart-charge cap (2026-08-29): max 6h of smart charging per 12:00-12:00 day (sensor.tesla_charging_time_daily mirrors Octopus's count; ALL smart charging counts, even inside 23:30-05:30). At/over the cap, daytime dispatches are no longer cheap, so the smart-slot posture requires cap headroom. The fixed 23:30-05:30 window is always off-peak regardless, so is_off_peak stays ungated. Sensor unavailable => assume capped (float(99)): worst case the PW skips a 6.9p fill instead of risking a peak-rate import. #}
+    {% set cap_ok = states('sensor.tesla_charging_time_daily') | float(99) < 6 %}
+    {% set active_charge = car_active and car_needs_charge and ((dispatch_active and cap_ok) or is_off_peak) %}
     {% set soc = states('sensor.rouse_house_pw3_percentage_charged') | float(0) %}
 
     {% set saving_session_active = is_state('binary_sensor.octopus_paid_saving_session_active', 'on') %}
 
-    {% set is_dump = (is_evening_dump_window or (is_night_dump_window and not active_charge)) if not saving_session_active else false %}
+    {# 2026-09-04: a live car dispatch PAUSES the evening dump too (previously only the night dump). Exporting while the car draws 7.4 kW nets at the meter, so the car ran off battery energy worth 12p instead of 6.9p grid. During the dispatch the smart-slot posture applies (PW refills at 6.9p, house at 6.9p); the dump resumes when the slot ends. #}
+    {% set is_dump = ((is_evening_dump_window or is_night_dump_window) and not active_charge) if not saving_session_active else false %}
     {% set allow_grid_charge = 'on' if (is_off_peak or active_charge) else 'off' %}
     {% set charge_target_soc = 100 if (is_night_refill_window or (today_at('23:30') <= now_dt or now_dt < today_at('01:30')) or active_charge) else 0 %}
     {% set op_mode = 'autonomous' if (is_dump or is_off_peak or active_charge) else 'self_consumption' %}
@@ -241,19 +262,19 @@ variables:
       {% set off_peak_start_h = now_dt.hour | int %}
       {% set off_peak_start_m = 0 %}
       {% set off_peak_end_h = 5 %}
-      {% set off_peak_end_m = 30 %}
+      {% set off_peak_end_m = 15 %}
       {% set off_peak_periods = [
         {'fromDayOfWeek': 0, 'fromHour': off_peak_start_h, 'fromMinute': off_peak_start_m, 'toDayOfWeek': 6, 'toHour': off_peak_end_h, 'toMinute': off_peak_end_m}
       ] %}
       {% set on_peak_periods = [
-        {'fromDayOfWeek': 0, 'fromHour': 5, 'fromMinute': 30, 'toDayOfWeek': 6, 'toHour': off_peak_start_h, 'toMinute': off_peak_start_m}
+        {'fromDayOfWeek': 0, 'fromHour': 5, 'fromMinute': 15, 'toDayOfWeek': 6, 'toHour': off_peak_start_h, 'toMinute': off_peak_start_m}
       ] %}
     {% else %}
       {% set off_peak_periods = [
-        {'fromDayOfWeek': 0, 'fromHour': 23, 'fromMinute': 30, 'toDayOfWeek': 6, 'toHour': 5, 'toMinute': 30}
+        {'fromDayOfWeek': 0, 'fromHour': 23, 'fromMinute': 30, 'toDayOfWeek': 6, 'toHour': 5, 'toMinute': 15}
       ] %}
       {% set on_peak_periods = [
-        {'fromDayOfWeek': 0, 'fromHour': 5, 'fromMinute': 30, 'toDayOfWeek': 6, 'toHour': 23, 'toMinute': 30}
+        {'fromDayOfWeek': 0, 'fromHour': 5, 'fromMinute': 15, 'toDayOfWeek': 6, 'toHour': 23, 'toMinute': 30}
       ] %}
     {% endif %}
 

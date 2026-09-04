@@ -1,28 +1,133 @@
 id: '1719003647423'
 alias: 'Powerwall: Set time to start exporting in evening'
-description: Calculates evening start export time dynamically based on total capacity (27 kWh for PW3 pair), current SoC,
-  export rate (14 kW), and a 10% reserve buffer.
+description: 'Plans the evening export so the dump finishes at 23:30: usable energy above a 10% buffer (27 kWh pair) at 14
+  kW export. 2026-09-03: re-computed from live SoC 2 min before the planned start; only ever pushed LATER by that check (drain
+  from washing / hot water after 20:40). 2026-09-04: SLOT-AWARE. Planned Octopus dispatches (both cars) that overlap now..23:30
+  are subtracted from the export time (the scheduler pauses the dump and refills the PW at 6.9p during a dispatch) and the
+  expected refill (10 kW x slot length, capped by what can be dumped before the slot) is added to the energy to export, so
+  the start moves EARLIER to make room: dump, refill in the slot, dump again. The plan is re-run whenever Octopus changes
+  the planned dispatches (planned_dispatches attribute) between 20:40 and 23:30, in either direction, but never once the dump
+  has already started. The T-2 re-check remains later-only. Runs at T-2 rather than T so it always wins the race against the
+  scheduler''s own trigger.'
 triggers:
-- at: '20:40:00'
-  trigger: time
+- trigger: time
+  at: '20:40:00'
+  id: initial
+  note: Initial plan for the evening
+- trigger: template
+  id: recheck
+  value_template: '{% set t = states(''input_datetime.time_to_start_exporting'') %}{{ t not in [''unknown'', ''unavailable'']
+    and now() >= today_at(''20:40'') and today_at(t) - timedelta(minutes=2) <= now() < today_at(t) }}'
+  note: Fires ~2 min before the planned start (template re-evaluates each minute because it uses now()). Guarded to the evening
+    so a stale helper time cannot fire it in the morning.
+- trigger: state
+  entity_id:
+  - binary_sensor.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_dispatching
+  - binary_sensor.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_dispatching
+  attribute: planned_dispatches
+  id: slots_changed
+  note: Octopus re-planned the car slots - re-plan the dump around them (evening only, see branch conditions)
 conditions: []
+variables:
+  slot_minutes: '{% set deadline = today_at(''23:30:00'') %}{% set ns = namespace(mins=0) %}{% for ent in [''binary_sensor.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_dispatching'',
+    ''binary_sensor.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_dispatching''] %}{% for d in state_attr(ent,
+    ''planned_dispatches'') | default([], true) %}{% set s = as_datetime(d.start) %}{% set e = as_datetime(d.end) %}{% if
+    s is not none and e is not none %}{% set ws = [s, now()] | max %}{% set we = [e, deadline] | min %}{% if we > ws %}{%
+    set ns.mins = ns.mins + (we - ws).total_seconds() / 60 %}{% endif %}{% endif %}{% endfor %}{% endfor %}{{ ns.mins | round(1)
+    }}'
+  first_slot_start: '{% set deadline = today_at(''23:30:00'') %}{% set ns = namespace(first=none) %}{% for ent in [''binary_sensor.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_dispatching'',
+    ''binary_sensor.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_dispatching''] %}{% for d in state_attr(ent,
+    ''planned_dispatches'') | default([], true) %}{% set s = as_datetime(d.start) %}{% set e = as_datetime(d.end) %}{% if
+    s is not none and e is not none %}{% set ws = [s, now()] | max %}{% set we = [e, deadline] | min %}{% if we > ws and (ns.first
+    is none or ws < ns.first) %}{% set ns.first = ws %}{% endif %}{% endif %}{% endfor %}{% endfor %}{{ ns.first.isoformat()
+    if ns.first is not none else '''' }}'
+  calculated_start: '{% set total_capacity = 27.0 %}{% set export_rate = 14.0 %}{% set import_rate = 10.0 %}{% set buffer_pct
+    = 10.0 %}{% set deadline = today_at(''23:30:00'') %}{% set soc = states(''sensor.rouse_house_pw3_percentage_charged'')
+    | float(0) %}{% set usable_kwh = [((soc - buffer_pct) / 100.0 * total_capacity), 0] | max %}{% set slot_hours = (slot_minutes
+    | float(0)) / 60 %}{% set pre_slot_hours = ((as_datetime(first_slot_start) - now()).total_seconds() / 3600) if first_slot_start
+    else 0 %}{% set refill_kwh = ([slot_hours * import_rate, usable_kwh, export_rate * [pre_slot_hours, 0] | max] | min) if
+    slot_hours > 0 else 0 %}{% set calculated_start = deadline - timedelta(hours=(usable_kwh + refill_kwh) / export_rate +
+    slot_hours) %}{{ (calculated_start if calculated_start >= now() else now() + timedelta(minutes=1)).replace(microsecond=0).isoformat()
+    }}'
 actions:
-- action: input_datetime.set_datetime
-  data:
-    datetime: |-
-      {% set total_capacity = 27.0 %}
-      {% set export_rate = 14.0 %}
-      {% set buffer_pct = 10.0 %}
-      {% set soc = states('sensor.rouse_house_pw3_percentage_charged') | float(0) %}
-      {% set usable_kwh = [((soc - buffer_pct) / 100.0 * total_capacity), 0] | max %}
-      {% set hours_to_export = usable_kwh / export_rate %}
-      {% set target_2330 = today_at('23:30:00') %}
-      {% set calculated_start = target_2330 - timedelta(hours=hours_to_export) %}
-      {% if calculated_start < now() %}
-        {{ (now() + timedelta(minutes=1)) | as_local }}
-      {% else %}
-        {{ calculated_start }}
-      {% endif %}
-  target:
-    entity_id: input_datetime.time_to_start_exporting
+- choose:
+  - conditions:
+    - condition: trigger
+      id: initial
+    sequence:
+    - action: input_datetime.set_datetime
+      data:
+        datetime: '{{ as_datetime(calculated_start) | as_local }}'
+      target:
+        entity_id: input_datetime.time_to_start_exporting
+  - conditions:
+    - condition: trigger
+      id: recheck
+    - condition: template
+      value_template: '{{ as_datetime(calculated_start) > today_at(states(''input_datetime.time_to_start_exporting'')) + timedelta(minutes=1)
+        }}'
+      note: Only act when live SoC says the dump should start more than a minute LATER than planned
+    sequence:
+    - action: system_log.write
+      data:
+        level: warning
+        logger: automation.powerwall_evening_export_start
+        message: Evening export start pushed back from {{ states('input_datetime.time_to_start_exporting')[0:5] }} to {{ (as_datetime(calculated_start)
+          | as_local).strftime('%H:%M') }} - SoC now {{ states('sensor.rouse_house_pw3_percentage_charged') | round(0) }}%,
+          planned car slots {{ slot_minutes }} min.
+    - action: input_datetime.set_datetime
+      data:
+        datetime: '{{ as_datetime(calculated_start) | as_local }}'
+      target:
+        entity_id: input_datetime.time_to_start_exporting
+    - action: notify.send_message
+      data:
+        title: '🔋 Powerwall: export start re-planned'
+        message: Battery at {{ states('sensor.rouse_house_pw3_percentage_charged') | round(0) }}% is lower than the 20:40
+          plan assumed. Evening export now starts at {{ (as_datetime(calculated_start) | as_local).strftime('%H:%M') }} so
+          it still finishes by 23:30.
+      target:
+        entity_id: notify.pixel_10_pro_xl
+  - conditions:
+    - condition: trigger
+      id: slots_changed
+    - condition: time
+      after: '20:40:00'
+      before: '23:30:00'
+    - condition: state
+      entity_id: input_boolean.manual_export_active
+      state: 'off'
+    - condition: state
+      entity_id: binary_sensor.octopus_paid_saving_session_active
+      state: 'off'
+    - condition: state
+      entity_id: input_boolean.power_hour_active
+      state: 'off'
+    - condition: template
+      value_template: '{{ today_at(states(''input_datetime.time_to_start_exporting'')) > now() }}'
+      note: Never re-plan a dump that has already started
+    - condition: template
+      value_template: '{{ ((as_datetime(calculated_start) - today_at(states(''input_datetime.time_to_start_exporting''))).total_seconds()
+        | abs) > 60 }}'
+      note: Only act on a change of more than a minute, either direction
+    sequence:
+    - action: system_log.write
+      data:
+        level: warning
+        logger: automation.powerwall_evening_export_start
+        message: Octopus re-planned car slots ({{ slot_minutes }} min before 23:30) - evening export start moved from {{ states('input_datetime.time_to_start_exporting')[0:5]
+          }} to {{ (as_datetime(calculated_start) | as_local).strftime('%H:%M') }}. SoC {{ states('sensor.rouse_house_pw3_percentage_charged')
+          | round(0) }}%.
+    - action: input_datetime.set_datetime
+      data:
+        datetime: '{{ as_datetime(calculated_start) | as_local }}'
+      target:
+        entity_id: input_datetime.time_to_start_exporting
+    - action: notify.send_message
+      data:
+        title: '🔋 Powerwall: export re-planned around car slot'
+        message: 'Octopus now has {{ slot_minutes }} min of car charging before 23:30. Evening export starts at {{ (as_datetime(calculated_start)
+          | as_local).strftime(''%H:%M'') }}: dump, refill at 6.9p during the slot, then dump again to finish by 23:30.'
+      target:
+        entity_id: notify.pixel_10_pro_xl
 mode: single

@@ -1,19 +1,42 @@
 id: '1780438387974'
 alias: 'Powerwall: Saving Session Controller'
-description: Runs ONLY for paid Octoplus Saving Sessions - gated by binary_sensor.octopus_paid_saving_session_active (octopoints_per_kwh
-  > 0; free sessions are handled by the Power Hour controller). Triggered natively by the saving-sessions calendar, with the
-  session input_datetimes as redundancy. Pushes a 3-period TOU export spike isolated to the session window and performs a
-  3m Kickstart nudge if the battery is idle. The soc_low protection only acts while a paid session is active.
+description: 'Runs ONLY for paid Octoplus Saving Sessions - gated by binary_sensor.octopus_paid_saving_session_active (octopoints_per_kwh
+  > 0; free sessions are handled by the Power Hour controller). Triggered natively by the saving-sessions calendar (+15s),
+  by the gate sensor itself flipping on, and by the session input_datetimes as redundancy. Pushes a 3-period TOU export spike
+  isolated to the session window. mode:restart + a re-assert loop (every 3m while the session is active and the battery is
+  idle) recovers the 2026-08-26 failure where the gateway accepted all commands, never exported, and silently reverted to
+  self_consumption mid-session; the old self_consumption->autonomous kickstart toggle was removed because its 5s settle raced
+  Tesla''s cloud sync and the stale self_consumption write got applied minutes later. Escalates to phone after 3 failed re-asserts.
+  The session_end/soc_low triggers restart the automation out of the loop and run the restore branch. 2026-09-02 fix: the
+  stuck test now uses GRID power (sensor.rouse_house_pw3_grid_power > -1 kW = not exporting), not battery power - tonight
+  the house drew 1.09 kW from the battery, the old battery_power<1 test read that as exporting, the loop exited after one
+  pass and the gateway sat idle for the whole 20:00-21:00 session; a manual self_consumption->autonomous toggle in the Tesla
+  app at ~20:55 started the export instantly. The re-assert therefore now performs that toggle (self_consumption -> 45s ->
+  autonomous, the Export Watchdog spacing; the old 5s version raced cloud sync) before re-pushing the TOU, because a bare
+  re-push does not un-stick a gateway that is already in autonomous. Tariff-first ordering (2026-09-02, same reasoning as
+  the Daily Scheduler): session TOU push, 15s settle, then grid switch, reserve, export, mode. The re-assert loop pushes the
+  TOU during the 45s self_consumption settle so the gateway re-plans against the new tariff when autonomous is restored. 2026-09-03:
+  (a) starts 5 min EARLY - calendar trigger offset -5m, the TOU spike opens 5 min before the session, and the paid-session
+  test is a template over joined_events (paid event running or starting within 6 min) because the gate binary_sensor is still
+  off pre-start; redundant T+0 triggers are ignored once export is flowing. (b) Stuck tests read the LOCAL gateway sensor
+  (sensor.powerwall_192_168_1_182_site_power, 30s) instead of the cloud-polled Teslemetry grid sensor, which lags ~1 min and
+  caused a false toggle at 18:03:34 today. (c) The loop exits when a manual export is armed.'
 triggers:
 - trigger: calendar
   entity_id: calendar.octopus_energy_a_dbae4963_octoplus_saving_sessions
   event: start
-  offset: 00:00:15
+  offset: -00:05:00
   id: session_start
+  note: 'Fires 5 min BEFORE the session so the export is already running at the start (2026-09-03: both sessions this week
+    needed ~3.5 min plus a nudge). The gate sensor and input_datetime triggers at T+0 remain as redundancy.'
 - trigger: calendar
   entity_id: calendar.octopus_energy_a_dbae4963_octoplus_saving_sessions
   event: end
   id: session_end
+- trigger: state
+  entity_id: binary_sensor.octopus_paid_saving_session_active
+  to: 'on'
+  id: session_start
 - at: input_datetime.octopus_saving_session_next_start
   id: session_start
   trigger: time
@@ -28,6 +51,11 @@ conditions:
 - condition: state
   entity_id: input_boolean.manual_export_active
   state: 'off'
+- condition: template
+  value_template: '{{ trigger.id != ''session_start'' or (states(''sensor.powerwall_192_168_1_182_site_power'') | float(0))
+    > -1 }}'
+  note: A redundant session_start trigger (gate sensor / input_datetime at T+0) must not restart a run whose export is already
+    flowing - mode:restart would re-push everything and reset the loop.
 actions:
 - choose:
   - conditions:
@@ -37,92 +65,28 @@ actions:
     - above: 20
       condition: numeric_state
       entity_id: sensor.rouse_house_pw3_percentage_charged
-    - condition: state
-      entity_id: binary_sensor.octopus_paid_saving_session_active
-      state: 'on'
+    - condition: template
+      value_template: '{% set ns = namespace(p=false) %}{% for e in state_attr(''event.octopus_energy_a_dbae4963_octoplus_saving_session_events'',''joined_events'')
+        | default([], true) %}{% if as_datetime(e.end) > now() and as_datetime(e.start) <= now() + timedelta(minutes=6) and
+        (e.octopoints_per_kwh | int(0)) > 0 %}{% set ns.p = true %}{% endif %}{% endfor %}{{ ns.p }}'
+      note: Paid session running now or starting within 6 min (octopoints_per_kwh > 0) - the binary_sensor gate is still off
+        during the 5-min pre-start.
     sequence:
-    - action: switch.turn_on
-      target:
-        entity_id: switch.rouse_house_pw3_allow_charging_from_grid
     - action: teslemetry.time_of_use
       data:
         device_id: dd527e4bc7ab1a14f356f9973480e7f7
-        tou_settings: |-
-          {% set start_str = states('input_datetime.octopus_saving_session_next_start') %}
-          {% set end_str = states('input_datetime.octopus_saving_session_end') %}
-          {% set start_dt_raw = as_datetime(start_str) if start_str not in ['unknown','unavailable','none'] else today_at('18:00') %}
-          {% set end_dt_raw = as_datetime(end_str) if end_str not in ['unknown','unavailable','none'] else today_at('19:00') %}
-          {% set start_dt = today_at(start_dt_raw.strftime('%H:%M:%S')) if start_dt_raw is not none else today_at('18:00') %}
-          {% set end_dt = today_at(end_dt_raw.strftime('%H:%M:%S')) if end_dt_raw is not none else today_at('19:00') %}
-          {% set start_hour = start_dt.hour | int %}
-          {% set start_minute = start_dt.minute | int %}
-          {% set end_hour = end_dt.hour | int %}
-          {% set end_minute = end_dt.minute | int %}
-
-          {% if end_dt.day == start_dt.day %}
-            {% set off_peak_periods = [
-              {'fromDayOfWeek': 0, 'fromHour': 0, 'fromMinute': 0, 'toDayOfWeek': 6, 'toHour': start_hour, 'toMinute': start_minute},
-              {'fromDayOfWeek': 0, 'fromHour': end_hour, 'fromMinute': end_minute, 'toDayOfWeek': 6, 'toHour': 0, 'toMinute': 0}
-            ] %}
-            {% set on_peak_periods = [
-              {'fromDayOfWeek': 0, 'fromHour': start_hour, 'fromMinute': start_minute, 'toDayOfWeek': 6, 'toHour': end_hour, 'toMinute': end_minute}
-            ] %}
-          {% else %}
-            {% set off_peak_periods = [
-              {'fromDayOfWeek': 0, 'fromHour': end_hour, 'fromMinute': end_minute, 'toDayOfWeek': 6, 'toHour': start_hour, 'toMinute': start_minute}
-            ] %}
-            {% set on_peak_periods = [
-              {'fromDayOfWeek': 0, 'fromHour': start_hour, 'fromMinute': start_minute, 'toDayOfWeek': 6, 'toHour': 0, 'toMinute': 0},
-              {'fromDayOfWeek': 0, 'fromHour': 0, 'fromMinute': 0, 'toDayOfWeek': 6, 'toHour': end_hour, 'toMinute': end_minute}
-            ] %}
-          {% endif %}
-
-          {{ {
-            'break_even_cost_to_charge': 0,
-            'mode': 'time_of_use',
-            'tariff_content_v2': {
-              'code': 'SAVING-SESSION-DUMP-ISOLATED',
-              'currency': 'GBP',
-              'daily_charges': [{'amount': 0, 'name': 'Charge'}],
-              'demand_charges': {'ALL': {'rates': {'ALL': 0}}},
-              'energy_charges': {
-                'ALL': {'rates': {'ALL': 0}},
-                'AllYear': {'rates': {'OFF_PEAK': 0.07, 'ON_PEAK': 3.00}}
-              },
-              'name': 'Saving Session Force Export Dump',
-              'seasons': {
-                'AllYear': {
-                  'fromDay': 1, 'fromMonth': 1, 'toDay': 31, 'toMonth': 12,
-                  'tou_periods': {
-                    'OFF_PEAK': {'periods': off_peak_periods},
-                    'ON_PEAK': {'periods': on_peak_periods}
-                  }
-                }
-              },
-              'sell_tariff': {
-                'currency': 'GBP',
-                'daily_charges': [{'amount': 0, 'name': 'Charge'}],
-                'demand_charges': {'ALL': {'rates': {'ALL': 0}}},
-                'energy_charges': {
-                  'ALL': {'rates': {'ALL': 0}},
-                  'AllYear': {'rates': {'OFF_PEAK': 0.00, 'ON_PEAK': 2.90}}
-                },
-                'name': 'Saving Session Force Export Dump',
-                'seasons': {
-                  'AllYear': {
-                    'fromDay': 1, 'fromMonth': 1, 'toDay': 31, 'toMonth': 12,
-                    'tou_periods': {
-                      'OFF_PEAK': {'periods': off_peak_periods},
-                      'ON_PEAK': {'periods': on_peak_periods}
-                    }
-                  }
-                },
-                'utility': 'Octopus Energy'
-              },
-              'utility': 'Octopus Energy',
-              'version': 1
-            }
-          } }}
+        tou_settings: '{{ session_tou }}'
+    - delay:
+        seconds: 15
+    - action: switch.turn_on
+      target:
+        entity_id: switch.rouse_house_pw3_allow_charging_from_grid
+    - action: number.set_value
+      data:
+        value: 0
+      target:
+        entity_id:
+        - number.rouse_house_pw3_backup_reserve
     - action: select.select_option
       data:
         option: battery_ok
@@ -135,40 +99,77 @@ actions:
       target:
         entity_id:
         - select.rouse_house_pw3_operation_mode
-    - action: number.set_value
-      data:
-        value: 0
-      target:
-        entity_id:
-        - number.rouse_house_pw3_backup_reserve
-    - delay:
-        minutes: 3
-    - if:
-      - below: 1
-        condition: numeric_state
-        entity_id: sensor.powerwall_192_168_1_182_battery_power
-      then:
-      - action: select.select_option
-        data:
-          option: self_consumption
-        target:
-          entity_id:
-          - select.rouse_house_pw3_operation_mode
-      - delay:
-          seconds: 5
-      - action: select.select_option
-        data:
-          option: autonomous
-        target:
-          entity_id:
-          - select.rouse_house_pw3_operation_mode
-      - action: notify.send_message
-        data:
-          message: Saving Session Export was idle after 3m. Toggled Self-Powered -> Autonomous to wake up Tesla Gateway! Battery
-            is now exporting.
-          title: '⚡ Powerwall Watchdog: Kickstart Nudge Executed'
-        target:
-          entity_id: notify.pixel_10_pro_xl
+    - repeat:
+        sequence:
+        - delay:
+            minutes: 3
+        - if:
+          - condition: numeric_state
+            entity_id: sensor.powerwall_192_168_1_182_site_power
+            above: -1
+          - condition: template
+            value_template: '{% set ns = namespace(p=false) %}{% for e in state_attr(''event.octopus_energy_a_dbae4963_octoplus_saving_session_events'',''joined_events'')
+              | default([], true) %}{% if as_datetime(e.end) > now() and as_datetime(e.start) <= now() + timedelta(minutes=6)
+              and (e.octopoints_per_kwh | int(0)) > 0 %}{% set ns.p = true %}{% endif %}{% endfor %}{{ ns.p }}'
+          then:
+          - action: system_log.write
+            data:
+              level: warning
+              logger: automation.powerwall_saving_session_controller
+              message: 'Saving Session export stuck (re-assert attempt {{ repeat.index }}): grid export < 1 kW. Toggling self_consumption
+                -> 45s -> autonomous, then re-pushing the session TOU and battery_ok export.'
+          - action: select.select_option
+            data:
+              option: self_consumption
+            target:
+              entity_id:
+              - select.rouse_house_pw3_operation_mode
+          - action: teslemetry.time_of_use
+            data:
+              device_id: dd527e4bc7ab1a14f356f9973480e7f7
+              tou_settings: '{{ session_tou }}'
+          - delay:
+              seconds: 45
+          - action: select.select_option
+            data:
+              option: battery_ok
+            target:
+              entity_id:
+              - select.rouse_house_pw3_allow_export
+          - action: select.select_option
+            data:
+              option: autonomous
+            target:
+              entity_id:
+              - select.rouse_house_pw3_operation_mode
+          - if:
+            - condition: template
+              value_template: '{{ repeat.index == 3 }}'
+            then:
+            - action: notify.send_message
+              data:
+                message: 3 re-assert attempts failed - the Gateway is ignoring the session export plan. Consider dumping manually
+                  via the Tesla app before the session window closes.
+                title: '⚠️ Powerwall: Session export STILL stuck'
+              target:
+                entity_id: notify.pixel_10_pro_xl
+        until:
+        - condition: or
+          conditions:
+          - condition: numeric_state
+            entity_id: sensor.powerwall_192_168_1_182_site_power
+            below: -1
+          - condition: template
+            value_template: '{% set ns = namespace(p=false) %}{% for e in state_attr(''event.octopus_energy_a_dbae4963_octoplus_saving_session_events'',''joined_events'')
+              | default([], true) %}{% if as_datetime(e.end) > now() and as_datetime(e.start) <= now() + timedelta(minutes=6)
+              and (e.octopoints_per_kwh | int(0)) > 0 %}{% set ns.p = true %}{% endif %}{% endfor %}{{ not ns.p }}'
+          - condition: template
+            value_template: '{{ repeat.index >= 25 }}'
+          - condition: state
+            entity_id: input_boolean.manual_export_active
+            state: 'on'
+            note: 'A manual export takes over - stop fighting it (2026-09-03 18:03: the re-assert toggled self_consumption
+              on a stale reading and cut a manual export for a minute)'
   - conditions:
     - condition: or
       conditions:
@@ -190,4 +191,81 @@ actions:
     - action: automation.trigger
       target:
         entity_id: automation.powerwall_daily_scheduler
-mode: single
+variables:
+  session_tou: |-
+    {% set start_str = states('input_datetime.octopus_saving_session_next_start') %}
+    {% set end_str = states('input_datetime.octopus_saving_session_end') %}
+    {% set start_dt_raw = as_datetime(start_str) if start_str not in ['unknown','unavailable','none'] else today_at('18:00') %}
+    {% set end_dt_raw = as_datetime(end_str) if end_str not in ['unknown','unavailable','none'] else today_at('19:00') %}
+    {% set start_dt = (today_at(start_dt_raw.strftime('%H:%M:%S')) if start_dt_raw is not none else today_at('18:00')) - timedelta(minutes=5) %}
+    {% set end_dt = today_at(end_dt_raw.strftime('%H:%M:%S')) if end_dt_raw is not none else today_at('19:00') %}
+    {% set start_hour = start_dt.hour | int %}
+    {% set start_minute = start_dt.minute | int %}
+    {% set end_hour = end_dt.hour | int %}
+    {% set end_minute = end_dt.minute | int %}
+
+    {% if end_dt.day == start_dt.day %}
+      {% set off_peak_periods = [
+        {'fromDayOfWeek': 0, 'fromHour': 0, 'fromMinute': 0, 'toDayOfWeek': 6, 'toHour': start_hour, 'toMinute': start_minute},
+        {'fromDayOfWeek': 0, 'fromHour': end_hour, 'fromMinute': end_minute, 'toDayOfWeek': 6, 'toHour': 0, 'toMinute': 0}
+      ] %}
+      {% set on_peak_periods = [
+        {'fromDayOfWeek': 0, 'fromHour': start_hour, 'fromMinute': start_minute, 'toDayOfWeek': 6, 'toHour': end_hour, 'toMinute': end_minute}
+      ] %}
+    {% else %}
+      {% set off_peak_periods = [
+        {'fromDayOfWeek': 0, 'fromHour': end_hour, 'fromMinute': end_minute, 'toDayOfWeek': 6, 'toHour': start_hour, 'toMinute': start_minute}
+      ] %}
+      {% set on_peak_periods = [
+        {'fromDayOfWeek': 0, 'fromHour': start_hour, 'fromMinute': start_minute, 'toDayOfWeek': 6, 'toHour': 0, 'toMinute': 0},
+        {'fromDayOfWeek': 0, 'fromHour': 0, 'fromMinute': 0, 'toDayOfWeek': 6, 'toHour': end_hour, 'toMinute': end_minute}
+      ] %}
+    {% endif %}
+
+    {{ {
+      'break_even_cost_to_charge': 0,
+      'mode': 'time_of_use',
+      'tariff_content_v2': {
+        'code': 'SAVING-SESSION-DUMP-ISOLATED',
+        'currency': 'GBP',
+        'daily_charges': [{'amount': 0, 'name': 'Charge'}],
+        'demand_charges': {'ALL': {'rates': {'ALL': 0}}},
+        'energy_charges': {
+          'ALL': {'rates': {'ALL': 0}},
+          'AllYear': {'rates': {'OFF_PEAK': 0.07, 'ON_PEAK': 3.00}}
+        },
+        'name': 'Saving Session Force Export Dump',
+        'seasons': {
+          'AllYear': {
+            'fromDay': 1, 'fromMonth': 1, 'toDay': 31, 'toMonth': 12,
+            'tou_periods': {
+              'OFF_PEAK': {'periods': off_peak_periods},
+              'ON_PEAK': {'periods': on_peak_periods}
+            }
+          }
+        },
+        'sell_tariff': {
+          'currency': 'GBP',
+          'daily_charges': [{'amount': 0, 'name': 'Charge'}],
+          'demand_charges': {'ALL': {'rates': {'ALL': 0}}},
+          'energy_charges': {
+            'ALL': {'rates': {'ALL': 0}},
+            'AllYear': {'rates': {'OFF_PEAK': 0.00, 'ON_PEAK': 2.90}}
+          },
+          'name': 'Saving Session Force Export Dump',
+          'seasons': {
+            'AllYear': {
+              'fromDay': 1, 'fromMonth': 1, 'toDay': 31, 'toMonth': 12,
+              'tou_periods': {
+                'OFF_PEAK': {'periods': off_peak_periods},
+                'ON_PEAK': {'periods': on_peak_periods}
+              }
+            }
+          },
+          'utility': 'Octopus Energy'
+        },
+        'utility': 'Octopus Energy',
+        'version': 1
+      }
+    } }}
+mode: restart

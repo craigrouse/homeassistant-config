@@ -6,7 +6,9 @@ description: 'Fully automates the free-electricity-hour pattern: when a joined f
   free during, peak after) so the Powerwall dumps right up to the session then refills at zero cost. The Power Hour controller
   takes over at session start (re-enables smart charging, reserve 100, hot water boost) and restores everything at session
   end. Dump start time is computed from live SoC at 13 kW net export plus a 5-minute buffer (minimum 10 minutes lead). Kill
-  switch: input_boolean.free_session_auto_dump.'
+  switch: input_boolean.free_session_auto_dump. Tariff-first ordering (2026-09-02): pre-dump TOU push, 15s settle, then grid
+  switch, reserve 0, export battery_ok, autonomous - the gateway checks the tariff before honouring reserve/mode (see Daily
+  Scheduler).'
 triggers:
 - trigger: template
   value_template: '{% set ns = namespace(start=none) %}{% for e in state_attr(''event.octopus_energy_a_dbae4963_octoplus_saving_session_events'',''joined_events'')
@@ -42,24 +44,6 @@ actions:
     entity_id:
     - input_boolean.manual_export_active
     - input_boolean.start_manual_force_import
-- action: switch.turn_on
-  target:
-    entity_id: switch.rouse_house_pw3_allow_charging_from_grid
-- action: select.select_option
-  data:
-    option: battery_ok
-  target:
-    entity_id: select.rouse_house_pw3_allow_export
-- action: select.select_option
-  data:
-    option: autonomous
-  target:
-    entity_id: select.rouse_house_pw3_operation_mode
-- action: number.set_value
-  data:
-    value: 0
-  target:
-    entity_id: number.rouse_house_pw3_backup_reserve
 - action: teslemetry.time_of_use
   data:
     device_id: dd527e4bc7ab1a14f356f9973480e7f7
@@ -126,6 +110,26 @@ actions:
           'version': 1
         }
       } }}
+- delay:
+    seconds: 15
+- action: switch.turn_on
+  target:
+    entity_id: switch.rouse_house_pw3_allow_charging_from_grid
+- action: number.set_value
+  data:
+    value: 0
+  target:
+    entity_id: number.rouse_house_pw3_backup_reserve
+- action: select.select_option
+  data:
+    option: battery_ok
+  target:
+    entity_id: select.rouse_house_pw3_allow_export
+- action: select.select_option
+  data:
+    option: autonomous
+  target:
+    entity_id: select.rouse_house_pw3_operation_mode
 - action: notify.send_message
   data:
     message: Free session pre-dump armed. Battery at {{ states('sensor.rouse_house_pw3_percentage_charged') | round(0) }}%,

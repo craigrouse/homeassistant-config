@@ -22,7 +22,11 @@ Tracked on the [kanban board](https://github.com/users/craigrouse/projects/3/vie
 
 ## Next
 - [ ] Teslemetry PINNED at v6.0.3 (v6.0.15 needs a newer core than 2026.8.3 and broke every TOU push on 2026-08-23) - unpin after the next core update or a fixed release; the broken version is skipped in HA updates
-- [ ] First paid Saving Session of the season: verify the new calendar-triggered controller + paid-session gate end-to-end
+- [x] First paid Saving Session of the season (2026-09-02 20:00): gate + triggers fired correctly; the gateway ignored the plan and the battery-power stuck test missed it → fixed (grid-power test, 45 s toggle, tariff-first ordering). Still to verify: the new re-assert loop against a real stall
+- [ ] Powerwall firmware: HA shows 26.18.3 (Teslemetry device record, may be stale); 26.26.4 rolled to ~50% of PW3s from 2026-09-01. Check the version in the Tesla app - if it is 26.26.x, tonight's command stalls (2026-09-02) are probably the new major, same pattern as 26.2 in Feb
+- [ ] Tesla app checks after the site re-creation: Powerwall → Vehicle Charging → Wall Connector Schedule (Rate Plan Charging) must be OFF, and no linked energy provider tariff (conflicts with API-pushed tariffs, alandtse/tesla#1171)
+- [ ] Evening planner is now slot-aware (2026-09-04): verify the first evening Octopus inserts a mid-evening dispatch - expect dump / 6.9p refill during the slot / dump again, finishing by 23:30; check the netting rule held (no export while the car drew)
+- [ ] Grid Fill Watchdog (new 2026-09-02): watch the first few nights for false nudges during the 23:30-05:00 refill (gateway may legitimately defer parts of the window); loosen the trigger if it fights the gateway
 - [ ] Margin tracker: sanity-check `sensor.grid_margin_today` against the Octopus bill after a full week
 - [ ] Update rate constants (6.9p/30.4p/12p) in the margin sensor whenever the tariff changes
 

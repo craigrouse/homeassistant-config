@@ -1,7 +1,10 @@
 id: powerwall_manual_import_controller
 alias: 'Powerwall: Manual Import Controller'
-description: Enables manual force import for X hours using input_number duration, pushing a 3-period TOU import tariff (isolating
-  off-peak to duration window) and performing a 3m Kickstart nudge if battery is idle.
+description: 'Enables manual force import for X hours using input_number duration, pushing a 3-period TOU import tariff (isolating
+  off-peak to duration window) and performing a 3m Kickstart nudge if battery is idle. 2026-09-02: tariff-first ordering (import
+  TOU push, 15s settle, then grid switch, reserve 100, export pv_only, autonomous) because the gateway checks the tariff before
+  honouring reserve/mode; kickstart toggle spacing 5s -> 45s to match the Export Watchdog (5s raced Tesla cloud sync). The
+  kickstart fired correctly at 22:57 tonight and charging began ~90s later.'
 triggers:
 - entity_id:
   - input_boolean.start_manual_force_import
@@ -31,10 +34,6 @@ actions:
         duration: '{{ (states(''input_number.import_duration_hours'') | float(1.0) * 3600) | int }}'
       target:
         entity_id: timer.import_countdown_timer
-    - action: switch.turn_on
-      target:
-        entity_id:
-        - switch.rouse_house_pw3_allow_charging_from_grid
     - action: teslemetry.time_of_use
       data:
         device_id: dd527e4bc7ab1a14f356f9973480e7f7
@@ -112,6 +111,18 @@ actions:
               'version': 1
             }
           } }}
+    - delay:
+        seconds: 15
+    - action: switch.turn_on
+      target:
+        entity_id:
+        - switch.rouse_house_pw3_allow_charging_from_grid
+    - action: number.set_value
+      data:
+        value: 100
+      target:
+        entity_id:
+        - number.rouse_house_pw3_backup_reserve
     - action: select.select_option
       data:
         option: pv_only
@@ -124,12 +135,6 @@ actions:
       target:
         entity_id:
         - select.rouse_house_pw3_operation_mode
-    - action: number.set_value
-      data:
-        value: 100
-      target:
-        entity_id:
-        - number.rouse_house_pw3_backup_reserve
     - delay:
         minutes: 3
     - if:
@@ -144,7 +149,7 @@ actions:
           entity_id:
           - select.rouse_house_pw3_operation_mode
       - delay:
-          seconds: 5
+          seconds: 45
       - action: select.select_option
         data:
           option: autonomous
@@ -153,8 +158,8 @@ actions:
           - select.rouse_house_pw3_operation_mode
       - action: notify.send_message
         data:
-          message: Manual Import was idle after 3m. Toggled Self-Powered -> Autonomous to wake up Tesla Gateway! Battery is
-            now grid charging.
+          message: 'Manual Import: battery was not charging after 3m. Toggled Self-Powered -> 45s -> Autonomous to wake up
+            the Tesla Gateway.'
           title: '⚡ Powerwall Watchdog: Kickstart Nudge Executed'
         target:
           entity_id: notify.pixel_10_pro_xl

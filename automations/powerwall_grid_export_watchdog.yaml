@@ -1,13 +1,21 @@
 id: powerwall_grid_export_watchdog
 alias: 'Powerwall: Grid Export Watchdog'
-description: Detects when Powerwall should be exporting to grid during dump windows but output is stuck at 0 kW, toggling
-  mode to force Gateway refresh.
+description: 'Detects when the Powerwall should be exporting to grid during dump windows (allow_export=battery_ok is the dump-intent
+  marker) but grid export is absent, and repeatedly refreshes the Gateway until it complies. 2026-08-30 fixes: stuck-test
+  now uses GRID power (export < 1 kW), not battery power - on 30 Aug the gateway stalled a dump at 22:29 but the house alone
+  was drawing ~1.7 kW from the battery, so the old battery_power<1 test could never see it. Also converted the one-shot toggle
+  into a retry loop (a template trigger that stays true never re-fires, so a single failed toggle used to end the rescue):
+  toggle self_consumption -> 45s -> autonomous, re-trigger the daily scheduler to re-push the dump TOU, wait 3m, repeat up
+  to 8 times; phone escalation on attempt 3. Paid saving sessions excluded - the Saving Session Controller owns its own re-assert
+  loop. Known gateway failure modes this covers: ignoring a TOU push entirely (26 Aug session), and token partial export (~2
+  kW for 12 min) before stalling (30 Aug). 2026-09-03: stuck test and exit test read the LOCAL gateway site-power sensor (30s
+  cadence) instead of the cloud-polled Teslemetry grid sensor, which lags ~1 min and can trigger a toggle against an export
+  that has already started.'
 triggers:
 - for: 00:03:00
   trigger: template
-  value_template: '{{ is_state(''select.rouse_house_pw3_allow_export'', ''battery_ok'') and is_state(''select.rouse_house_pw3_operation_mode'',
-    ''autonomous'') and (states(''sensor.rouse_house_pw3_battery_power'') | float(0)) < 1.0 and (states(''sensor.rouse_house_pw3_percentage_charged'')
-    | float(0)) > 15 }}'
+  value_template: '{{ is_state(''select.rouse_house_pw3_allow_export'', ''battery_ok'') and (states(''sensor.powerwall_192_168_1_182_site_power'')
+    | float(0)) > -1.0 and (states(''sensor.rouse_house_pw3_percentage_charged'') | float(0)) > 15 }}'
 conditions:
 - condition: state
   entity_id: binary_sensor.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_dispatching
@@ -15,27 +23,59 @@ conditions:
 - condition: state
   entity_id: binary_sensor.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_dispatching
   state: 'off'
+- condition: state
+  entity_id: binary_sensor.octopus_paid_saving_session_active
+  state: 'off'
 actions:
-- action: system_log.write
-  data:
-    level: warning
-    logger: automation.powerwall_export_watchdog
-    message: 'Powerwall Export Watchdog: Export stuck. Initiating Tesla Gateway refresh sequence.'
-- action: select.select_option
-  data:
-    option: self_consumption
-  target:
-    entity_id: select.rouse_house_pw3_operation_mode
-- delay:
-    seconds: 5
-- action: select.select_option
-  data:
-    option: autonomous
-  target:
-    entity_id: select.rouse_house_pw3_operation_mode
-- action: automation.trigger
-  target:
-    entity_id: automation.powerwall_daily_scheduler
-  data:
-    skip_condition: false
+- repeat:
+    sequence:
+    - action: system_log.write
+      data:
+        level: warning
+        logger: automation.powerwall_export_watchdog
+        message: 'Powerwall Export Watchdog: export stuck (refresh attempt {{ repeat.index }}). Toggling mode and re-pushing
+          the dump TOU.'
+    - action: select.select_option
+      data:
+        option: self_consumption
+      target:
+        entity_id: select.rouse_house_pw3_operation_mode
+    - delay:
+        seconds: 45
+    - action: select.select_option
+      data:
+        option: autonomous
+      target:
+        entity_id: select.rouse_house_pw3_operation_mode
+    - action: automation.trigger
+      target:
+        entity_id: automation.powerwall_daily_scheduler
+      data:
+        skip_condition: false
+    - if:
+      - condition: template
+        value_template: '{{ repeat.index == 3 }}'
+      then:
+      - action: notify.send_message
+        data:
+          message: 3 Gateway refresh attempts failed - the Powerwall is not exporting during a dump window. Consider forcing
+            export manually.
+          title: '⚠️ Powerwall: Export STILL stuck'
+        target:
+          entity_id: notify.pixel_10_pro_xl
+    - delay:
+        minutes: 3
+    until:
+    - condition: or
+      conditions:
+      - condition: numeric_state
+        entity_id: sensor.powerwall_192_168_1_182_site_power
+        below: -1
+      - condition: not
+        conditions:
+        - condition: state
+          entity_id: select.rouse_house_pw3_allow_export
+          state: battery_ok
+      - condition: template
+        value_template: '{{ repeat.index >= 8 }}'
 mode: single

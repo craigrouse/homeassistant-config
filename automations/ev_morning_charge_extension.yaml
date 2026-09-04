@@ -7,18 +7,29 @@ description: 'Shadow charge system (rebuilt to owner intent 2026-08-23 evening):
   ready-by to the shadow time - so the gap is charged on 6.9p morning slots and completes BY the shadow time. Renault branch
   extends ready-by only (it has no separate shadow limit; charges toward its own Octopus target). Midday reset: ready-by back
   to 05:30, charge target back to the 80% norm if the shadow flow raised it, arm toggle cleared (midday ONLY - owner ruling).
-  22:20 reset: ready-by only, so overnight planning always starts from 05:30. NOTE: the shadow ready-by must sit on a half-hour
-  boundary (it is written into the Octopus target-time select). Car detection: Wall Connector occupied + meilin_charge_cable
-  ON = Tesla, OFF = Renault (the old sensor.wall_connector_vehicle VIN sensor no longer exists - do not reintroduce it).'
+  22:20 reset: ready-by only, so overnight planning always starts from 05:30. HALF-HOUR ROUNDING (2026-09-02): the Octopus
+  target-time select only offers 30-minute options, so the shadow ready-by is rounded DOWN to the half-hour everywhere it is
+  used (09:15 -> 09:00; the car is still ready BY the time entered). Before this, an unrounded 09:15 made select_option
+  throw and the run aborted silently AFTER the charge limit had been raised - car sat at 70% with no dispatch. Both writes
+  now use continue_on_error and are verified; a mismatch pushes a phone alert instead of the success toast. Car detection:
+  Wall Connector occupied + meilin_charge_cable ON = Tesla, OFF = Renault (the old sensor.wall_connector_vehicle VIN sensor
+  no longer exists - do not reintroduce it).'
 triggers:
 - trigger: template
-  value_template: '{% set shadow = states(''input_datetime.tesla_shadow_ready_by'') %}{% if is_state(''input_boolean.home_for_morning'',
-    ''on'') and is_state(''binary_sensor.tesla_wall_connector_vehicle_connected'', ''on'') %}{% if is_state(''binary_sensor.meilin_charge_cable'',
-    ''on'') %}{% set gap = states(''input_number.tesla_desired_soc'') | float(100) - states(''sensor.meilin_battery_level'')
-    | float(100) %}{% set rate = 9.8 %}{% else %}{% set gap = states(''number.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_charge_target'')
-    | float(100) - states(''sensor.battery'') | float(100) %}{% set rate = 14.2 %}{% endif %}{% set lead_h = ([gap, 0] | max
-    / rate) + 0.34 %}{{ gap > 0 and now() >= (today_at(shadow) - timedelta(hours=lead_h)) and now() < today_at(shadow) }}{%
-    else %}false{% endif %}'
+  value_template: >-
+    {% set raw = states('input_datetime.tesla_shadow_ready_by') %}
+    {% set shadow = '%02d:%02d' | format(raw[0:2] | int(0), (raw[3:5] | int(0)) // 30 * 30) %}
+    {% if is_state('input_boolean.home_for_morning', 'on') and is_state('binary_sensor.tesla_wall_connector_vehicle_connected', 'on') %}
+      {% if is_state('binary_sensor.meilin_charge_cable', 'on') %}
+        {% set gap = states('input_number.tesla_desired_soc') | float(100) - states('sensor.meilin_battery_level') | float(100) %}
+        {% set rate = 9.8 %}
+      {% else %}
+        {% set gap = states('number.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_charge_target') | float(100) - states('sensor.battery') | float(100) %}
+        {% set rate = 14.2 %}
+      {% endif %}
+      {% set lead_h = ([gap, 0] | max / rate) + 0.34 %}
+      {{ gap > 0 and now() >= (today_at(shadow) - timedelta(hours=lead_h)) and now() < today_at(shadow) }}
+    {% else %}false{% endif %}
   id: extend_window
 - trigger: state
   entity_id: input_boolean.home_for_morning
@@ -34,13 +45,22 @@ triggers:
   id: reset_extension_night
 conditions: []
 variables:
-  shadow_hhmm: '{{ states(''input_datetime.tesla_shadow_ready_by'')[0:5] }}'
-  in_window: '{% set shadow = states(''input_datetime.tesla_shadow_ready_by'') %}{% if is_state(''binary_sensor.tesla_wall_connector_vehicle_connected'',
-    ''on'') %}{% if is_state(''binary_sensor.meilin_charge_cable'', ''on'') %}{% set gap = states(''input_number.tesla_desired_soc'')
-    | float(100) - states(''sensor.meilin_battery_level'') | float(100) %}{% set rate = 9.8 %}{% else %}{% set gap = states(''number.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_charge_target'')
-    | float(100) - states(''sensor.battery'') | float(100) %}{% set rate = 14.2 %}{% endif %}{% set lead_h = ([gap, 0] | max
-    / rate) + 0.34 %}{{ gap > 0 and now() >= (today_at(shadow) - timedelta(hours=lead_h)) and now() < today_at(shadow) }}{%
-    else %}false{% endif %}'
+  shadow_hhmm: >-
+    {% set raw = states('input_datetime.tesla_shadow_ready_by') %}
+    {{ '%02d:%02d' | format(raw[0:2] | int(0), (raw[3:5] | int(0)) // 30 * 30) }}
+  in_window: >-
+    {% set shadow = shadow_hhmm %}
+    {% if is_state('binary_sensor.tesla_wall_connector_vehicle_connected', 'on') %}
+      {% if is_state('binary_sensor.meilin_charge_cable', 'on') %}
+        {% set gap = states('input_number.tesla_desired_soc') | float(100) - states('sensor.meilin_battery_level') | float(100) %}
+        {% set rate = 9.8 %}
+      {% else %}
+        {% set gap = states('number.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_charge_target') | float(100) - states('sensor.battery') | float(100) %}
+        {% set rate = 14.2 %}
+      {% endif %}
+      {% set lead_h = ([gap, 0] | max / rate) + 0.34 %}
+      {{ gap > 0 and now() >= (today_at(shadow) - timedelta(hours=lead_h)) and now() < today_at(shadow) }}
+    {% else %}false{% endif %}
 actions:
 - choose:
   - conditions:
@@ -71,22 +91,47 @@ actions:
       note: 'Idempotence: already extended this morning'
     sequence:
     - action: number.set_value
+      continue_on_error: true
       target:
         entity_id: number.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_charge_target
       data:
         value: '{{ states(''input_number.tesla_desired_soc'') | int }}'
       note: The limit-sync automation propagates this to the car's BLE charging limit
     - action: select.select_option
+      continue_on_error: true
       target:
         entity_id: select.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_target_time
       data:
         option: '{{ shadow_hhmm }}'
-    - action: persistent_notification.create
-      data:
-        title: Tesla Shadow Charge
-        message: Charge target raised to {{ states('input_number.tesla_desired_soc') | int }}% and ready-by moved to {{ shadow_hhmm
-          }}. SoC now {{ states('sensor.meilin_battery_level') | round(0) }}%, daily charging {{ states('sensor.tesla_charging_time_daily')
-          }}h.
+    - if:
+      - condition: template
+        value_template: '{{ is_state(''select.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_target_time'',
+          shadow_hhmm) and states(''number.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_charge_target'')
+          | int(-1) == states(''input_number.tesla_desired_soc'') | int(-2) }}'
+        note: Verify both Octopus writes actually landed (2026-09-02 - a silent select failure left the car uncharged)
+      then:
+      - action: persistent_notification.create
+        data:
+          title: Tesla Shadow Charge
+          message: Charge target raised to {{ states('input_number.tesla_desired_soc') | int }}% and ready-by moved to {{ shadow_hhmm
+            }}. SoC now {{ states('sensor.meilin_battery_level') | round(0) }}%, daily charging {{ states('sensor.tesla_charging_time_daily')
+            }}h.
+      else:
+      - action: notify.send_message
+        data:
+          title: '⚠️ Tesla Shadow Charge FAILED'
+          message: 'Shadow extension did not apply. Octopus ready-by is {{ states(''select.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_target_time'')
+            }} (wanted {{ shadow_hhmm }}), charge target {{ states(''number.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_charge_target'')
+            }}% (wanted {{ states(''input_number.tesla_desired_soc'') | int }}%). SoC {{ states(''sensor.meilin_battery_level'')
+            | round(0) }}%. Fix manually or the car stays at its overnight level.'
+        target:
+          entity_id: notify.pixel_10_pro_xl
+      - action: persistent_notification.create
+        data:
+          title: Tesla Shadow Charge FAILED
+          message: Ready-by is {{ states('select.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_target_time')
+            }} (wanted {{ shadow_hhmm }}), charge target {{ states('number.octopus_energy_00000000_0002_4000_8020_0000000dc626_intelligent_charge_target')
+            }}% (wanted {{ states('input_number.tesla_desired_soc') | int }}%). Check the automation trace.
   - conditions:
     - condition: trigger
       id:
@@ -113,15 +158,35 @@ actions:
           == shadow_hhmm }}'
     sequence:
     - action: select.select_option
+      continue_on_error: true
       target:
         entity_id: select.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_target_time
       data:
         option: '{{ shadow_hhmm }}'
-    - action: persistent_notification.create
-      data:
-        title: Renault Shadow Charge
-        message: Ready-by moved to {{ shadow_hhmm }} to farm morning slots. SoC {{ states('sensor.battery') }}%, target {{
-          states('number.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_charge_target') }}%.
+    - if:
+      - condition: state
+        entity_id: select.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_target_time
+        state: '{{ shadow_hhmm }}'
+      then:
+      - action: persistent_notification.create
+        data:
+          title: Renault Shadow Charge
+          message: Ready-by moved to {{ shadow_hhmm }} to farm morning slots. SoC {{ states('sensor.battery') }}%, target {{
+            states('number.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_charge_target') }}%.
+      else:
+      - action: notify.send_message
+        data:
+          title: '⚠️ Renault Shadow Charge FAILED'
+          message: 'Ready-by is still {{ states(''select.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_target_time'')
+            }} (wanted {{ shadow_hhmm }}). SoC {{ states(''sensor.battery'') }}%. Fix manually or the car stays at its overnight
+            level.'
+        target:
+          entity_id: notify.pixel_10_pro_xl
+      - action: persistent_notification.create
+        data:
+          title: Renault Shadow Charge FAILED
+          message: Ready-by is still {{ states('select.octopus_energy_00000000_0002_4000_8020_00000010fcb0_intelligent_target_time')
+            }} (wanted {{ shadow_hhmm }}). Check the automation trace.
   - conditions:
     - condition: trigger
       id:
